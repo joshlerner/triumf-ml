@@ -1,3 +1,6 @@
 # ignore logbook entries
 jupyter_logbook.txt
 ip.txt
+.ipynb_checkpoints
+start_container.sh
+start_jupyternotebook.sh
