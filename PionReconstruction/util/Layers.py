@@ -46,9 +46,9 @@ class GlobalExchange(keras.layers.Layer):
 class GarNet(keras.layers.Layer):
     """ """
     def __init__(self, n_aggregators, n_filters, n_propagate,
-                 output_activation='tanh',
+                 output_activation=None, #'tanh'
                  quantize_transforms=False,
-                 simplified=False,
+                 simplified=True, #False
                  **kwargs):
         """ """
         
