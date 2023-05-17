@@ -31,7 +31,7 @@ class GarNetModel(keras.Model):
         self.output_classification = self.add_layer(keras.layers.Dense, 2, activation='sigmoid', name='classification')
         self.output_regression = self.add_layer(keras.layers.Dense, 1, name='regression')
         
-        self._compile()
+        self.compile(loss=self.loss_fcn, optimizer='adam')
         
         if summarize:
             self.summary()
@@ -68,18 +68,17 @@ class GarNetModel(keras.Model):
         return layer
     
     def summary(self):
+        """ """
         inputs = keras.Input(shape=(128, 4,))
         outputs = self.call(inputs)
         keras.Model(inputs=inputs, outputs=outputs, name=self.name).summary() 
         
-    def _compile(self):
-        def loss_fcn(y_true, y_pred):
+    
+    def loss_fcn(y_true, y_pred):
+        """ """
+        bce = keras.losses.BinaryCrossentropy()
+        mse = K.mean(K.square((y_true[:,2:3] - y_pred[:,2:3]) / y_true[:,2:3]), axis=-1)
         
-            bce = keras.losses.BinaryCrossentropy()
-            mse = K.mean(K.square((y_true[:,2:3] - y_pred[:,2:3]) / y_true[:,2:3]), axis=-1)
-        
-            return bce(y_true[:,0:2], y_pred[:,0:2]) + (0.01 - 0.01)*mse
-        
-        self.compile(loss=loss_fcn, optimizer='adam')
+        return 0.01*bce(y_true[:,0:2], y_pred[:,0:2]) + 0.99*mse
     
         
