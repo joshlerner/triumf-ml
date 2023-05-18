@@ -1,7 +1,9 @@
 import numpy as np
 import uproot as ur
+import gzip
 import pickle
 import awkward as ak
+import random
 
 import os
 import time
@@ -22,9 +24,8 @@ class Generator:
         self.labeled = labeled
         self.preprocess = preprocess
         self.output_dir = output_dir
-        self.cellGeo_file = cellGeo_file
-        self.cellGeo_data = ur.open(self.cellGeo_file)['CellGeo']
-        # check this with original convert script
+        with ur.open(cellGeo_file) as file:
+            self.geo_dict = loadGraphDictionary(file['CellGeo'])
         self.batch_size = batch_size
         self.shuffle = shuffle
         
@@ -42,35 +43,7 @@ class Generator:
 
     def preprocessor(self, worker_id):
         """ Abstract Method """
-        pass
-    
-    def preprocessed_worker(self, worker_id, batch_queue):
-        """ """
-        batch_data = []
-        batch_targts = []
-        
-        file_num = worker_id
-        while file_num < self.num_files:
-            with gzip.open(self.output_dir + f'{self.name}_{file_num:03d}.{self.save_type}') as f:
-                file_data = pickle.load(f)
-            
-            for i in range(len(file_data)):
-                batch_data.append(file_data[i][0])
-                batch_targets.append(file_data[i][1])
-            
-                if len(batch_data) == self.batch_size:
-                    batch_targets = np.reshape(np.array(batch_targets), [-1, 2]).astype(np.float32)
-                    
-                    batch_queue.put((batch_data, batch_targets))
-                    
-                    batch_graphs = []
-                    batch_targets = []
-                    
-            file_num += self.num_procs
-        
-        if len(batch_data) > 0:
-            batch_targets = np.reshape(np.array(batch_targets), [-1,2]).astype(np.float32)
-            batch_queue.put((batch_data, batch_targets))
+        pass  
     
     def preprocess_data(self):
         """ """
@@ -85,10 +58,31 @@ class Generator:
     
     def worker(self, worker_id, batch_queue):
         """ """
-        if self.preprocess:
-            self.preprocessed_worker(worker_id, batch_queue)
-        else:
-            raise Exception('\nPreprocessing is required for combined classification/regression models')
+        batch_data = []
+        batch_targets = []
+        
+        file_num = worker_id
+        while file_num < self.num_files:
+            with gzip.open(self.output_dir + f'{self.name}_{file_num:03d}.{self.save_type}') as f:
+                file_data = pickle.load(f)
+            
+            for i in range(len(file_data)):
+                batch_data.append(file_data[i][0])
+                batch_targets.append(file_data[i][1])
+            
+                if len(batch_data) == self.batch_size:
+                    batch_targets = np.reshape(np.array(batch_targets), [-1, 3]).astype(np.float32)
+                    
+                    batch_queue.put((batch_data, batch_targets))
+                    
+                    batch_graphs = []
+                    batch_targets = []
+                    
+            file_num += self.num_procs
+        
+        if len(batch_data) > 0:
+            batch_targets = np.reshape(np.array(batch_targets), [-1,3]).astype(np.float32)
+            batch_queue.put((batch_data, batch_targets))
     
     def check_procs(self):
         """ """
@@ -103,7 +97,7 @@ class Generator:
             
         self.procs = []
     
-    def generator(self): ## can call fit with a generator
+    def generator(self):
         """ Generator that returns processed batches during training """
         
         batch_queue = Queue(2 * self.num_procs)
@@ -127,7 +121,7 @@ class Generator:
 class garnetDataGenerator(Generator):
     """ """
     def __init__(self, file_list, cellGeo_file, batch_size,
-                labeled=True, shuffle=True, num_procs=32, preprocess=False, output_dir=None):
+                labeled=False, shuffle=True, num_procs=32, preprocess=False, output_dir=None):
         """ """
         super().__init__('garnet', 'p', file_list, cellGeo_file, batch_size,
                          labeled, shuffle, num_procs, preprocess, output_dir)
@@ -136,7 +130,7 @@ class garnetDataGenerator(Generator):
         """ """
         file_num = worker_id
         while file_num < self.num_files:
-            print(f'\nProccessing file {file_num}')
+            print(f'Processing file {file_num}')
             if self.labeled:
                 file = ur.open(self.file_list[file_num][0])
                 label = self.file_list[file_num][1]
@@ -147,44 +141,74 @@ class garnetDataGenerator(Generator):
             preprocessed_data = []
             
             num_events = len(tree.arrays(tree.keys()[0]))
-            
+            event_data = tree.arrays(library='np')
             for event in range(num_events):
-                
-                num_clusters = tree.arrays('nCluster')['nCluster'][event]
+                num_clusters = event_data['nCluster'][event]
                 for cluster in range(num_clusters):
-                    
-                    cluster_E = tree.arrays('cluster_E')['cluster_E'][event][cluster]
-                    target_E = tree.arrays('cluster_ENG_CALIB_TOT')['cluster_ENG_CALIB_TOT'][event][cluster]
-                    
-                    cluster_eta = tree.arrays('cluster_Eta')['cluster_Eta'][event][cluster]
-                    cluster_phi = tree.arrays('cluster_Phi')['cluster_Phi'][event][cluster]
-                        
-                    cell_e = tree.arrays('cluster_cell_E')['cluster_cell_E'][event][cluster]
-                        
-                    cellIDs = tree.arrays('cluster_cell_ID')['cluster_cell_ID'][event][cluster]
-                    ### map to coordinates
-                    cell_eta = 
-                    cell_phi =
-                    cell_samp =
-                    ### normalize
+
+                    cluster_E = event_data['cluster_E'][event][cluster]
+                    target_E = event_data['cluster_ENG_CALIB_TOT'][event][cluster]
+
+                    cluster_eta = event_data['cluster_Eta'][event][cluster]
+                    cluster_phi = event_data['cluster_Phi'][event][cluster]
+
+                    cell_e = event_data['cluster_cell_E'][event][cluster]
+
+                    cellIDs = event_data['cluster_cell_ID'][event][cluster]
+                    # Converting Cell IDs
+                    cell_eta = np.vectorize(self.geo_dict['cell_geo_eta'].get)(np.nan_to_num(cellIDs))
+                    cell_phi = np.vectorize(self.geo_dict['cell_geo_phi'].get)(np.nan_to_num(cellIDs))
+                    cell_samp = np.vectorize(self.geo_dict['cell_geo_sampling'].get)(np.nan_to_num(cellIDs))
+                    # Normalizing
                     cell_eta = cell_eta - cluster_eta
                     cell_phi = cell_phi - cluster_phi
-                    cell_e = np.nan_to_num(np.log10(cell_e), neginf=0.0)
-                    target_E = np.nan_to_num(np.log10(target_E), neginf=0.0)
-                    ### clip and pad to PADLENGTH
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        cell_e = np.nan_to_num(np.log10(cell_e), nan=0.0, posinf=0.0, neginf=0.0)
+                        target_E = np.nan_to_num(np.log10(target_E), nan=0.0, posinf=0.0, neginf=0.0)
+                    # Clipping and Padding
                     PADLENGTH = 128
                     data = ak.pad_none(np.stack((cell_eta, cell_phi, cell_samp, cell_e), axis=-1), PADLENGTH, clip=True, axis=0)
                     if not self.labeled:
-                        label = np.round(tree.arrays('cluster_EM_PROBABILITY')['cluster_EM_PROBABILITY'][event][cluster]
+                        label = np.round(event_data['cluster_EM_PROBABILITY'][event][cluster])
                     target = [label, int(not label), target_E]
                     if cluster_E > 0:
                         preprocessed_data.append((data, target))
             
+            random.shuffle(preprocessed_data)
+            
+            # Saving
             with gzip.open(self.output_dir + f'{self.name}_{file_num:03d}.{self.save_type}', 'wb') as f:
                 pickle.dump(preprocessed_data, f)
             
-            print(f'\nFinished processing file {file_num}')
+            print(f'Finished processing file {file_num}')
             file_num += self.num_procs
+
+# A quick implemention of Dilia's idea for converting the geoTree into a dict
+def loadGraphDictionary(graphTree):
+    globalDict = {}
+    print("\nLoading Geo Dictionary...")
+
+    arrays = graphTree.arrays()
+    keys = graphTree.keys()
+    for key in keys:
+        if key not in ['cell_geo_sampling', 'cell_geo_eta', 'cell_geo_phi']: 
+            continue
+        branchDict = {}
+        print(f'\tStarting on {key}')
         
+        for iter, ID in enumerate(arrays['cell_geo_ID'][0]):
+            branchDict[ID] = arrays[key][0][iter]
+
+        if key == 'cell_geo_sampling':
+            mask = 0
+        else:
+            mask = None
+
+        branchDict[0] = mask
+        branchDict[4308257264] = mask #Magic Number ID???
+        
+        globalDict[key] = branchDict
+    print('Finished loading Geo Dictionary')
+    return globalDict
     
         
