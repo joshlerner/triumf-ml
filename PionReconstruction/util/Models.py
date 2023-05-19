@@ -50,7 +50,7 @@ class GarNetModel(keras.Model):
                 x = layer(x)
             features.append(x)
         
-        #x = tf.concat(features, axis=-1) What does this do?
+        x = tf.concat(features, axis=-1)
         
         x = K.mean(x, axis=-2)
         x = self.output_dense_0(x)
@@ -74,7 +74,7 @@ class GarNetModel(keras.Model):
         keras.Model(inputs=inputs, outputs=outputs, name=self.name).summary() 
         
     
-    def loss_fcn(y_true, y_pred):
+    def loss_fcn(self, y_true, y_pred):
         """ """
         bce = keras.losses.BinaryCrossentropy()
         mse = K.mean(K.square((y_true[:,2:3] - y_pred[:,2:3]) / y_true[:,2:3]), axis=-1)

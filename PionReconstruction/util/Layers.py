@@ -140,7 +140,7 @@ class GarNet(keras.layers.Layer):
         return data, num_vertex, vertex_mask
 
     
-    def _garnet(self, data, num_verted, vertex_mask, in_transform, d_compute, out_transform):
+    def _garnet(self, data, num_vertex, vertex_mask, in_transform, d_compute, out_transform):
         """ """
         features = in_transform(data) # (B, V, F)
         distance = d_compute(data) # (B, V, S)
@@ -210,7 +210,6 @@ class GarNet(keras.layers.Layer):
         config.update({
             'simplified': self._simplified,
             'collapse':self._collapse,
-            'input_format':self._input_format,
             'output_activation':self._output_activation,
             'quantize_transforms':self._quantize_transforms,
             'mean_by_nvert':self._mean_by_nvert})
@@ -222,7 +221,7 @@ class GarNet(keras.layers.Layer):
         """ """
         config.update({
             'n_aggregators':self._aggregator_distance.units,
-            'n_filters':self._output_feasture_transform.units,
+            'n_filters':self._output_feature_transform.units,
             'n_propogate':self._input_feature_transform.units})
     
     @staticmethod

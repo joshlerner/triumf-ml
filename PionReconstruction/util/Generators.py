@@ -24,8 +24,6 @@ class Generator:
         self.labeled = labeled
         self.preprocess = preprocess
         self.output_dir = output_dir
-        with ur.open(cellGeo_file) as file:
-            self.geo_dict = loadGraphDictionary(file['CellGeo'])
         self.batch_size = batch_size
         self.shuffle = shuffle
         
@@ -39,6 +37,8 @@ class Generator:
         
         if self.preprocess and self.output_dir is not None:
             os.makedirs(self.output_dir, exist_ok=True)
+            with ur.open(cellGeo_file) as file:
+                self.geo_dict = loadGraphDictionary(file['CellGeo'])
             self.preprocess_data()
 
     def preprocessor(self, worker_id):
@@ -63,7 +63,7 @@ class Generator:
         
         file_num = worker_id
         while file_num < self.num_files:
-            with gzip.open(self.output_dir + f'{self.name}_{file_num:03d}.{self.save_type}') as f:
+            with gzip.open(self.output_dir + f'{self.name}_{file_num:03d}.{self.save_type}', 'rb') as f:
                 file_data = pickle.load(f)
             
             for i in range(len(file_data)):
@@ -73,16 +73,16 @@ class Generator:
                 if len(batch_data) == self.batch_size:
                     batch_targets = np.reshape(np.array(batch_targets), [-1, 3]).astype(np.float32)
                     
-                    batch_queue.put((batch_data, batch_targets))
+                    batch_queue.put((np.array(batch_data), batch_targets))
                     
-                    batch_graphs = []
+                    batch_data = []
                     batch_targets = []
                     
             file_num += self.num_procs
         
         if len(batch_data) > 0:
             batch_targets = np.reshape(np.array(batch_targets), [-1,3]).astype(np.float32)
-            batch_queue.put((batch_data, batch_targets))
+            batch_queue.put((np.array(batch_data), batch_targets))
     
     def check_procs(self):
         """ """
@@ -167,11 +167,12 @@ class garnetDataGenerator(Generator):
                         target_E = np.nan_to_num(np.log10(target_E), nan=0.0, posinf=0.0, neginf=0.0)
                     # Clipping and Padding
                     PADLENGTH = 128
-                    data = ak.pad_none(np.stack((cell_eta, cell_phi, cell_samp, cell_e), axis=-1), PADLENGTH, clip=True, axis=0)
+                    data = np.stack((cell_eta, cell_phi, cell_samp, cell_e), axis=-1)
+                    data = np.pad(data[0:128], [(0, max(0, PADLENGTH-len(data))), (0, 0)], 'constant')
                     if not self.labeled:
                         label = np.round(event_data['cluster_EM_PROBABILITY'][event][cluster])
                     target = [label, int(not label), target_E]
-                    if cluster_E > 0:
+                    if cluster_E > 0.5:
                         preprocessed_data.append((data, target))
             
             random.shuffle(preprocessed_data)
