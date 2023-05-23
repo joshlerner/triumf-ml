@@ -31,7 +31,7 @@ class GarNetModel(keras.Model):
         self.output_classification = self.add_layer(keras.layers.Dense, 2, activation='sigmoid', name='classification')
         self.output_regression = self.add_layer(keras.layers.Dense, 1, name='regression')
         
-        self.compile(loss=self.loss_fcn, optimizer='adam')
+        self.compile(loss=self.loss_fcn, optimizer='adam', metrics=['accuracy'])
         
         if summarize:
             self.summary()
@@ -77,8 +77,8 @@ class GarNetModel(keras.Model):
     def loss_fcn(self, y_true, y_pred):
         """ """
         bce = keras.losses.BinaryCrossentropy()
-        mse = K.mean(K.square((y_true[:,2:3] - y_pred[:,2:3]) / y_true[:,2:3]), axis=-1)
-        
-        return 0.01*bce(y_true[:,0:2], y_pred[:,0:2]) + 0.99*mse
+        mse = keras.losses.MeanSquaredError()
+
+        return 0.01*bce(y_true[:,0:2], y_pred[:,0:2]) + 0.99*mse(y_true[:,2:3], y_pred[:,2:3])
     
         
