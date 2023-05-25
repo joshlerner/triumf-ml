@@ -31,7 +31,7 @@ class GarNetModel(keras.Model):
         self.output_classification = self.add_layer(keras.layers.Dense, 2, activation='sigmoid', name='classification')
         self.output_regression = self.add_layer(keras.layers.Dense, 1, name='regression')
         
-        self.compile(loss=self.loss_fcn, optimizer='adam', metrics=['accuracy'])
+        self.compile(loss=self.loss_fcn, optimizer=keras.optimizers.Adam(learning_rate=0.001), metrics=['accuracy'])
         
         if summarize:
             self.summary()

@@ -1,3 +1,6 @@
+### num vertex is not computed correctly, summing over batch rather than per event
+
+
 import tensorflow.keras as keras
 
 K = keras.backend
@@ -46,9 +49,11 @@ class GlobalExchange(keras.layers.Layer):
 class GarNet(keras.layers.Layer):
     """ """
     def __init__(self, n_aggregators, n_filters, n_propagate,
-                 output_activation=None, #'tanh'
+                 output_activation=None,
                  quantize_transforms=False,
-                 simplified=True, #False
+                 simplified=True,
+                 mean_by_nvert=False,
+                 collapse=None,
                  **kwargs):
         """ """
         
@@ -57,8 +62,8 @@ class GarNet(keras.layers.Layer):
         self._simplified = simplified
         self._quantize_transforms = quantize_transforms
         self._output_activation=output_activation
-        self._collapse = None # o un de 'mean', 'sum', 'max'
-        self._mean_by_nvert = False
+        self._collapse = collapse
+        self._mean_by_nvert = mean_by_nvert
         
         self._setup_transforms(n_aggregators, n_filters, n_propagate)
         
@@ -131,9 +136,8 @@ class GarNet(keras.layers.Layer):
         #vertex_mask = K.expand_dims(K.cast(K.less(vertex_indices, K.cast(num_vertex, 'int32')), 'float32'), axis=-1)
         
         ### Masks based on an energy cut off, compares last feature
-        #energy_min = 150. #(GeV)
         
-        energy_min = 0.5
+        energy_min = 0.0
         vertex_mask = K.cast(K.less(energy_min, data[..., 3:4]), 'float32')
         num_vertex = K.sum(vertex_mask)
 
@@ -152,7 +156,7 @@ class GarNet(keras.layers.Layer):
         if self._mean_by_nvert:
             def graph_mean(out, axis):
                 s = K.sum(out, axis=axis)
-                s = K.reshape(s, (-1, d_compute.units * in_transform.units) / num_vertex)
+                s = K.reshape(s, (-1, d_compute.units * in_transform.units)) / num_vertex
                 s = K.reshape(s, (-1, d_compute.units, in_transform.units))
                 return s
         else:
@@ -205,7 +209,7 @@ class GarNet(keras.layers.Layer):
         
     def get_config(self):
         """ """
-        config = super(GarNet, self).get_config()
+        config = super().get_config()
         
         config.update({
             'simplified': self._simplified,

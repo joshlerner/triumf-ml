@@ -27,11 +27,19 @@ class Generator:
         self.noisy = noisy
         self.batch_size = batch_size
         self.shuffle = shuffle
-        
-        self.file_list = file_list
-        self.num_files = len(self.file_list)
-        
-        if self.shuffle: np.random.shuffle(self.file_list)
+        self.file_list = file_list # should be either one list or a tuple of two lists
+        if isinstance(file_list, tuple):
+            assert(len(file_list) == 2)
+            assert(len(file_list[0]) == len(file_list[1]))
+            self.num_files = len(file_list[0])
+            if self.shuffle: 
+                np.random.shuffle(file_list[0])
+                np.random.shuffle(file_list[1])
+            self.file_list = np.append(file_list[0], file_list[1], axis=0)
+        else:
+            self.num_files = len(self.file_list)
+            if self.shuffle: np.random.shuffle(self.file_list)
+            self.file_list = file_list
         
         self.num_procs = np.min([num_procs, self.num_files])
         self.procs = []
@@ -133,72 +141,71 @@ class garnetDataGenerator(Generator):
         """ """
         file_num = worker_id
         while file_num < self.num_files:
-            try: 
-                if self.noisy:
-                    print(f'Processing file {file_num}')
-                if self.labeled:
-                    file = ur.open(self.file_list[file_num][0])
-                    label = self.file_list[file_num][1]
+            preprocessed_data = []
+            if self.noisy: print(f'Processing file {file_num}')
+            for i in [0, 1]:
+                try: 
+                    if self.labeled:
+                        file = ur.open(self.file_list[file_num + i*self.num_files][0])
+                        label = self.file_list[file_num + i*self.num_files][1]
+                    else:
+                        file = ur.open(self.file_list[file_num + i*self.num_files])
+                    tree = file['EventTree']
+                except:
+                    if self.labeled:
+                        print(f'{self.file_list[file_num + i*self.num_files][0]} could not be opened')
+                    else:
+                        print(f'{self.file_list[file_num + i*self.num_files]} could not be opened')
+
                 else:
-                    file = ur.open(self.file_list[file_num])
-                tree = file['EventTree']
+                    num_events = len(tree.arrays(tree.keys()[0]))
+                    event_data = tree.arrays(library='np')
+                    for event in range(num_events):
+                        num_clusters = event_data['nCluster'][event]
+                        for cluster in range(num_clusters):
 
-                preprocessed_data = []
+                            cluster_E = event_data['cluster_E'][event][cluster]
+                            target_E = event_data['cluster_ENG_CALIB_TOT'][event][cluster]
 
-                num_events = len(tree.arrays(tree.keys()[0]))
-                event_data = tree.arrays(library='np')
-                for event in range(num_events):
-                    num_clusters = event_data['nCluster'][event]
-                    for cluster in range(num_clusters):
+                            cluster_eta = event_data['cluster_Eta'][event][cluster]
+                            cluster_phi = event_data['cluster_Phi'][event][cluster]
 
-                        cluster_E = event_data['cluster_E'][event][cluster]
-                        target_E = event_data['cluster_ENG_CALIB_TOT'][event][cluster]
+                            cell_e = event_data['cluster_cell_E'][event][cluster]
 
-                        cluster_eta = event_data['cluster_Eta'][event][cluster]
-                        cluster_phi = event_data['cluster_Phi'][event][cluster]
+                            cellIDs = event_data['cluster_cell_ID'][event][cluster]
+                            # Converting Cell IDs
+                            cell_eta = np.vectorize(self.geo_dict['cell_geo_eta'].get)(np.nan_to_num(cellIDs))
+                            cell_phi = np.vectorize(self.geo_dict['cell_geo_phi'].get)(np.nan_to_num(cellIDs))
+                            cell_samp = np.vectorize(self.geo_dict['cell_geo_sampling'].get)(np.nan_to_num(cellIDs))
+                            # Normalizing
+                            cell_eta = cell_eta - cluster_eta
+                            cell_phi = cell_phi - cluster_phi
+                            with np.errstate(divide='ignore', invalid='ignore'):
+                                cell_e = np.nan_to_num(np.log10(cell_e), nan=0.0, posinf=0.0, neginf=0.0)
+                                target_E = np.nan_to_num(np.log10(target_E), nan=0.0, posinf=0.0, neginf=0.0)
+                            # Clipping and Padding
+                            PADLENGTH = 128
+                            data = np.stack((cell_eta, cell_phi, cell_samp, cell_e), axis=-1)
+                            data = np.pad(data[0:128], [(0, max(0, PADLENGTH-len(data))), (0, 0)], 'constant')
+                            if not self.labeled:
+                                label = np.round(event_data['cluster_EM_PROBABILITY'][event][cluster])
+                            target = np.append(tf.keras.utils.to_categorical(label, 2), target_E)
+                            if cluster_E > 0.5:
+                                preprocessed_data.append((data, target))
+                                
+            if self.shuffle: np.random.shuffle(preprocessed_data)
 
-                        cell_e = event_data['cluster_cell_E'][event][cluster]
-
-                        cellIDs = event_data['cluster_cell_ID'][event][cluster]
-                        # Converting Cell IDs
-                        cell_eta = np.vectorize(self.geo_dict['cell_geo_eta'].get)(np.nan_to_num(cellIDs))
-                        cell_phi = np.vectorize(self.geo_dict['cell_geo_phi'].get)(np.nan_to_num(cellIDs))
-                        cell_samp = np.vectorize(self.geo_dict['cell_geo_sampling'].get)(np.nan_to_num(cellIDs))
-                        # Normalizing
-                        cell_eta = cell_eta - cluster_eta
-                        cell_phi = cell_phi - cluster_phi
-                        with np.errstate(divide='ignore', invalid='ignore'):
-                            cell_e = np.nan_to_num(np.log10(cell_e), nan=0.0, posinf=0.0, neginf=0.0)
-                            target_E = np.nan_to_num(np.log10(target_E), nan=0.0, posinf=0.0, neginf=0.0)
-                        # Clipping and Padding
-                        PADLENGTH = 128
-                        data = np.stack((cell_eta, cell_phi, cell_samp, cell_e), axis=-1)
-                        data = np.pad(data[0:128], [(0, max(0, PADLENGTH-len(data))), (0, 0)], 'constant')
-                        if not self.labeled:
-                            label = np.round(event_data['cluster_EM_PROBABILITY'][event][cluster])
-                        target = [label, int(not label), target_E]
-                        if cluster_E > 0.5:
-                            preprocessed_data.append((data, target))
-
-                random.shuffle(preprocessed_data)
-
-                # Saving
-                with gzip.open(self.output_dir + f'{self.name}_{file_num:03d}.{self.save_type}', 'wb') as f:
-                    pickle.dump(preprocessed_data, f)
-                if self.noisy:
-                    print(f'Finished processing file {file_num}')
-            except:
-                if self.labeled:
-                    print(f'{self.file_list[file_num][0]} could not be opened')
-                else:
-                    print(f'{self.file_list[file_num]} could not be opened')
-            finally:
-                file_num += self.num_procs
-                
+            # Saving
+            with gzip.open(self.output_dir + f'{self.name}_{file_num:03d}.{self.save_type}', 'wb') as f:
+                pickle.dump(preprocessed_data, f)
+            if self.noisy:
+                print(f'Finished processing file {file_num}')
+                    
+            file_num += self.num_procs
                 
 
-# A quick implemention of Dilia's idea for converting the geoTree into a dict
 def loadGraphDictionary(graphTree):
+    """ """
     globalDict = {}
     print("\nLoading Geo Dictionary...")
 
