@@ -26,17 +26,37 @@ def training_curve(history, metric,
     ax.legend(labels, loc='best')
     fig.show()
     
-def ROC(pred, target, title='ROC'):
+def ROC(pred_target_pairs, labels, title='ROC'):
     """ """
     fig = plt.figure()
     ax = fig.add_subplot()
-    fp, tp, threshs = roc_curve(target[:, 0], pred[:, 0])
-    score = roc_auc_score(target[:, 0], pred[:, 0])
-    ax.plot(1-fp, tp)
+    for i, pair in enumerate(pred_target_pairs):
+        pred = pair[0]
+        target = pair[1]
+        fp, tp, threshs = roc_curve(target[:, 0], pred[:, 0])
+        score = roc_auc_score(target[:, 0], pred[:, 0])
+        ax.plot(1-fp, tp)
+        labels[i] = labels[i] + f' AUC: {score:.3f}'
     ax.set_xlabel('Rejection Rate')        
     ax.set_ylabel('Identification Rate')
     ax.set_title(title)
-    ax.text(0, 0, f'AUC: {score:.3f}')
+    ax.legend(labels, loc='best')
+    fig.show()
+    
+def efficiency(pred_target_pairs, labels, title='efficiency'):
+    """ """
+    fig = plt.figure()
+    ax = fig.add_subplot()
+    for i, pair in enumerate(pred_target_pairs):
+        pred = pair[0]
+        target = pair[1]
+        fp, tp, threshs = roc_curve(target[:, 0], pred[:, 0])
+        with np.errstate(divide='ignore'):
+            ax.semilogy(tp, 1/fp)
+    ax.set_xlabel('Efficiency')
+    ax.set_ylabel('Rejection Rate')
+    ax.set_title(title)
+    ax.legend(labels, loc='best')
     fig.show()
 
 

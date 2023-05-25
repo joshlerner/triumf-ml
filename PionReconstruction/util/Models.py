@@ -7,10 +7,10 @@ from util.Layers import *
 
 class GarNetModel(keras.Model):
     """ """
-    def __init__(self, aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), summarize=True, **kwargs):
+    def __init__(self, alpha=0.01, aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), summarize=True, **kwargs):
         """ """
         super(GarNetModel, self).__init__(**kwargs)
-        
+        self.alpha = alpha
         self.blocks = []
         
         block_params = zip(aggregators, filters, propagate)
@@ -79,6 +79,6 @@ class GarNetModel(keras.Model):
         bce = keras.losses.BinaryCrossentropy()
         mse = keras.losses.MeanSquaredError()
 
-        return 0.01*bce(y_true[:,0:2], y_pred[:,0:2]) + 0.99*mse(y_true[:,2:3], y_pred[:,2:3])
+        return self.alpha*bce(y_true[:,0:2], y_pred[:,0:2]) + (1-self.alpha)*mse(y_true[:,2:3], y_pred[:,2:3])
     
         
