@@ -181,8 +181,8 @@ class garnetDataGenerator(Generator):
                             cell_eta = cell_eta - cluster_eta
                             cell_phi = cell_phi - cluster_phi
                             with np.errstate(divide='ignore', invalid='ignore'):
-                                cell_e = np.nan_to_num(np.log10(cell_e), nan=0.0, posinf=0.0, neginf=0.0)
-                                target_E = np.nan_to_num(np.log10(target_E), nan=0.0, posinf=0.0, neginf=0.0)
+                                cell_e = np.nan_to_num(np.log(cell_e), nan=0.0, posinf=0.0, neginf=0.0)
+                                target_E = np.nan_to_num(np.log(target_E), nan=0.0, posinf=0.0, neginf=0.0)
                             # Clipping and Padding
                             PADLENGTH = 128
                             data = np.stack((cell_eta, cell_phi, cell_samp, cell_e), axis=-1)

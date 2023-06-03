@@ -62,23 +62,24 @@ def efficiency(pred, target, label=None, title='Classification Efficiency', xlab
     if label is not None: ax.legend(label, loc='best')
     return fig
 
-def regResponse(pred, target, stat='median', bins=None, title='Regression Response', xlabel='Cluster Calib Hits', ylabel='Cluster Energy / Calib Hits'):
+def regResponse(pred, target, stat='median', bins=None, title='Regression Response', 
+                xlabel='Cluster Calib Hits', ylabel='Cluster Energy / Calib Hits'):
     fig = plt.figure()
     ax = fig.add_subplot()
     with np.errstate(divide='ignore'):
-        x = pred / target
-        y = target
+        x = np.exp(target)
+        y = np.exp(pred) / np.exp(target)
     try: 
         assert len(bins) == 2
         xbin = bns[0]
         ybin = bins[1]
     except:
-        xbin = [10**exp for exp in np.arange(-1.0, 3.1, 0.1)]
+        xbin = [10**exp for exp in np.arange(-0.9, 3.1, 0.1)]
         ybin = np.arange(0.1, 3.1, 0.1)
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
     profile_stat = stats.binned_statistic(x, y, bins=xbin, statistic=stat).statistic
     
-    hh = ax.hist2d(x, y, bins=[xbin, ybin], cmap='gist_earth', norm=LogNorm(), zorder=-1)
+    hh = ax.hist2d(x, y, bins=[xbin, ybin], cmap='gist_earth_r', norm=LogNorm(), zorder=-1)
     ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black')
     ax.plot(xcenter, profile_stat, color='red')
     ax.set_xscale('log')

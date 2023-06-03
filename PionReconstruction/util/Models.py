@@ -77,8 +77,7 @@ class GarNetModel(keras.Model):
     def loss_fcn(self, y_true, y_pred):
         """ """
         bce = keras.losses.BinaryCrossentropy()
-        mse = keras.losses.MeanSquaredError()
+        mse = keras.losses.MeanSquaredError() #((y_true[:,2:3] - y_pred[:, 2:3])/(y_true[:,2:3]+0.0000001))**2
 
         return self.alpha*bce(y_true[:,0:2], y_pred[:,0:2]) + (1-self.alpha)*mse(y_true[:,2:3], y_pred[:,2:3])
-    
         
