@@ -83,7 +83,7 @@ def regResponse(pred, target, stat='median', bins=None, title='Regression Respon
     ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black')
     ax.plot(xcenter, profile_stat, color='red')
     ax.set_xscale('log')
-    ax.set_ylim(0, 3)
+    ax.set_ylim(0.4, 2)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
