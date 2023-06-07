@@ -23,10 +23,10 @@ def training(history, metric, validate=True, title=None, xlabel='epoch', ylabel=
     ax = fig.add_subplot()
     if title is None: title = metric
     if ylabel is None: ylabel = metric
-    ax.plot(history.history[metric])
+    ax.plot(history[metric])
     labels.append('train')
     if validate:
-        ax.plot(history.history['val_' + metric])
+        ax.plot(history['val_' + metric])
         labels.append('val')
     ax.set_title(title)
     ax.set_ylabel(ylabel)

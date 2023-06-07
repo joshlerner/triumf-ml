@@ -9,9 +9,14 @@ class GarNetModel(keras.Model):
     """ """
     def __init__(self, alpha=0.50, normalizer=None, aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), summarize=True, **kwargs):
         """ """
-        super(GarNetModel, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.alpha = alpha
         self.normalizer = normalizer
+        self.aggregators = aggregators
+        self.filters = filters
+        self.propagate = propagate
+        self.summarize = summarize
+        self.kwargs = kwargs
         self.blocks = []
         
         block_params = zip(aggregators, filters, propagate)
@@ -32,7 +37,16 @@ class GarNetModel(keras.Model):
         self.output_classification = self.add_layer(keras.layers.Dense, 2, activation='sigmoid', name='classification')
         self.output_regression = self.add_layer(keras.layers.Dense, 1, name='regression')
         
-        self.compile(loss=self.loss_fcn, optimizer=keras.optimizers.Adam(learning_rate=0.001), metrics=['accuracy'])
+        def loss_fcn(y_true, y_pred):
+            bce = keras.losses.BinaryCrossentropy()
+            if normalizer is not None:
+                mse = keras.losses.MeanSquaredError()
+            else:
+                def mse(ytrue, ypred):
+                    return ((y_true - y_pred)/(y_true + 0.001))**2
+            return alpha*bce(y_true[:,0:2], y_pred[:,0:2]) + (1-alpha)*mse(y_true[:,2:3], y_pred[:,2:3])
+        
+        self.compile(loss=loss_fcn, optimizer=keras.optimizers.Adam(learning_rate=0.001), metrics=['accuracy'])
         
         if summarize:
             self.summary()
@@ -73,15 +87,15 @@ class GarNetModel(keras.Model):
         inputs = keras.Input(shape=(128, 4,))
         outputs = self.call(inputs)
         keras.Model(inputs=inputs, outputs=outputs, name=self.name).summary() 
-        
     
-    def loss_fcn(self, y_true, y_pred):
-        """ """
-        bce = keras.losses.BinaryCrossentropy()
-        if self.normalizer is not None:
-            mse = keras.losses.MeanSquaredError()
-        else:
-            def mse(ytrue, ypred):
-                return ((y_true - y_pred)/(y_true + 0.001))**2
-
-        return self.alpha*bce(y_true[:,0:2], y_pred[:,0:2]) + (1-self.alpha)*mse(y_true[:,2:3], y_pred[:,2:3])
+    def get_config(self):
+        return {'alpha':self.alpha,
+                'normalizer':self.normalizer,
+                'aggregators':self.aggregators,
+                'filters':self.filters,
+                'propagate':self.propagate,
+                'summarize':self.summarize}
+    
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
