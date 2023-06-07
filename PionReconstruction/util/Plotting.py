@@ -62,13 +62,13 @@ def efficiency(pred, target, label=None, title='Classification Efficiency', xlab
     if label is not None: ax.legend(label, loc='best')
     return fig
 
-def regResponse(pred, target, stat='median', bins=None, title='Regression Response', 
+def regResponse(pred, target, stat=['median'], bins=None, title='Regression Response', 
                 xlabel='Cluster Calib Hits', ylabel='Cluster Energy / Calib Hits'):
     fig = plt.figure()
     ax = fig.add_subplot()
     with np.errstate(divide='ignore'):
-        x = np.exp(target)
-        y = np.exp(pred) / np.exp(target)
+        x = target
+        y = np.nan_to_num(pred / target, 0.0)
     try: 
         assert len(bins) == 2
         xbin = bns[0]
@@ -77,13 +77,20 @@ def regResponse(pred, target, stat='median', bins=None, title='Regression Respon
         xbin = [10**exp for exp in np.arange(-0.9, 3.1, 0.1)]
         ybin = np.arange(0.1, 3.1, 0.1)
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
-    profile_stat = stats.binned_statistic(x, y, bins=xbin, statistic=stat).statistic
-    
     hh = ax.hist2d(x, y, bins=[xbin, ybin], cmap='gist_earth_r', norm=LogNorm(), zorder=-1)
     ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black')
-    ax.plot(xcenter, profile_stat, color='red')
+    for s in stat:
+        if s == 'stdmean':
+            upper = stats.binned_statistic(x, y, bins=xbin, statistic='mean').statistic + \
+            np.abs(stats.binned_statistic(x, y, bins=xbin, statistic='std').statistic)
+            lower = stats.binned_statistic(x, y, bins=xbin, statistic='mean').statistic - \
+            np.abs(stats.binned_statistic(x, y, bins=xbin, statistic='std').statistic)
+            ax.fill_between(xcenter, lower, upper, color='black', alpha=0.2)
+        else:      
+            ps = stats.binned_statistic(x, y, bins=xbin, statistic=s).statistic
+            ax.plot(xcenter, ps, color='red')
     ax.set_xscale('log')
-    ax.set_ylim(0.4, 2)
+    ax.set_ylim(0, 3)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
