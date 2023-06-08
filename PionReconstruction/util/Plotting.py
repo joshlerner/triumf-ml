@@ -76,8 +76,8 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
         xbin = bns[0]
         ybin = bins[1]
     except:
-        xbin = [10**exp for exp in np.arange(-0.9, 3.1, 0.1)]
-        ybin = np.arange(0.1, 3.1, 0.1)
+        xbin = [10**exp for exp in np.arange(-0.6, 3.1, 0.1)]
+        ybin = np.arange(0.5, 2.1, 0.1)
 
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
 
@@ -94,7 +94,7 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
             ps = stats.binned_statistic(x, y, bins=xbin, statistic=s).statistic
             ax.plot(xcenter, ps, color='red')
     ax.set_xscale('log')
-    ax.set_ylim(0, 3)
+    ax.set_ylim(0.5, 2)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
@@ -119,7 +119,7 @@ def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title
         xbin = bins[0]
         ybin = bins[1]
     except:
-        xbin = [10**exp for exp in np.arange(-1.0, 3.1, 0.1)]
+        xbin = [10**exp for exp in np.arange(-0.1, 3.1, 0.1)]
         
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
     
@@ -135,10 +135,10 @@ def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title
                 ps = stats.binned_statistic(x[label], y[label], bins=xbin, statistic=s).statistic
                 ax.plot(xcenter, ps)
 
-    ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black', zorder=0)
+    ax.plot([1, 1000], [1, 1], linestyle='--', color='black', zorder=0)
 
     ax.set_xscale('log')
-    ax.set_ylim(0, 3)
+    ax.set_ylim(0.5, 2)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)

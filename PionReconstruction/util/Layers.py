@@ -126,25 +126,14 @@ class GarNet(keras.layers.Layer):
         """ """
         
         data = x
-        data_shape = K.shape(data)
-        
-        B = data_shape[0]
-        V = data_shape[1]
-        
-        ### Masks based on a specified number of vertices, works with ordered data
-        
-        #vertex_indices = K.tile(K.expand_dims(K.arange(0, V), axis=0), (B, 1))
-        #vertex_mask = K.expand_dims(K.cast(K.less(vertex_indices, K.cast(num_vertex, 'int32')), 'float32'), axis=-1)
         
         ### Masks based on an energy cut off, compares last feature
         if self._normalizer == 'log':
             energy_min = 0.0
         elif self._normalizer == 'std':
-            energy_min = -3.0
+            energy_min = 0.003
         elif self._normalizer == 'max':
-            energy_min = 0.001
-        else:
-            energy_min = -1.0
+            energy_min = 0.0
 
         vertex_mask = K.cast(K.less(energy_min, data[..., 3:4]), 'float32')
         num_vertex = K.sum(vertex_mask, axis=-2)

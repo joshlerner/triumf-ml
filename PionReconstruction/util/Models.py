@@ -9,11 +9,12 @@ def scheduler(epoch, lr):
     if epoch < 15:
         return lr
     else:
-        return lr*tf.math.exp(-0.03)
+        return lr*tf.math.exp(-0.05)
 
 class GarNetModel(keras.Model):
     """ """
-    def __init__(self, alpha=0.50, normalizer='log', aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), summarize=False, **kwargs):
+    def __init__(self, alpha=0.50, normalizer='log', 
+                 aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), summarize=False, **kwargs):
         """ """
         super().__init__(**kwargs)
         self.alpha = alpha
@@ -45,11 +46,9 @@ class GarNetModel(keras.Model):
         
         def loss_fcn(y_true, y_pred):
             bce = keras.losses.BinaryCrossentropy()
-            if normalizer is not None:
-                mse = keras.losses.MeanSquaredError()
-            else:
-                def mse(ytrue, ypred):
-                    return ((y_true - y_pred)/(y_true + 0.001))**2
+            mse = keras.losses.MeanSquaredError()
+            #def mse(ytrue, ypred):
+            #        return ((y_true - y_pred)/(y_true + K.epsilon()))**2
             return alpha*bce(y_true[:,0:2], y_pred[:,0:2]) + (1-alpha)*mse(y_true[:,2:3], y_pred[:,2:3])
         
         self.compile(loss=loss_fcn, optimizer=keras.optimizers.Adam(learning_rate=0.001), metrics=['accuracy'])

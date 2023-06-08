@@ -187,12 +187,13 @@ class garnetDataGenerator(Generator):
                                     cell_e = np.nan_to_num(np.log(cell_e), nan=0.0, posinf=0.0, neginf=0.0)
                                     target_E = np.nan_to_num(np.log(target_E), nan=0.0, posinf=0.0, neginf=0.0)
                                 elif self.normalizer[0] == 'max':
-                                    cell_e = np.array(cell_e) / self.normalizer[1]
-                                    target_E = np.array(target_E) / self.normalizer[1]
-                                elif self.normalizer[0] == 'std':
                                     scaler = self.normalizer[1]
                                     cell_e = scaler.transform(np.reshape(cell_e, (-1, 1))).reshape(-1,)
                                     target_E = scaler.transform(np.reshape(target_E, (-1, 1))).reshape(-1,)
+                                elif self.normalizer[0] == 'std':
+                                    scaler = self.normalizer[1]
+                                    cell_e = scaler.transform(np.reshape(cell_e, (-1, 1))).reshape(-1,) - scaler.transform([[0]])[0,0]
+                                    target_E = scaler.transform(np.reshape(target_E, (-1, 1))).reshape(-1,) - scaler.transform([[0]])[0,0]
                             # Clipping and Padding
                             PADLENGTH = 128
                             data = np.stack((cell_eta, cell_phi, cell_samp, cell_e), axis=-1)
