@@ -140,7 +140,7 @@ class GarNet(keras.layers.Layer):
         if self._normalizer == 'log':
             energy_min = 0.0
         elif self._normalizer == 'std':
-            energy_min = -2.0
+            energy_min = -3.0
         elif self._normalizer == 'max':
             energy_min = 0.001
         else:
