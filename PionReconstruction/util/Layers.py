@@ -48,7 +48,7 @@ class GlobalExchange(keras.layers.Layer):
     
 class GarNet(keras.layers.Layer):
     """ """
-    def __init__(self, n_aggregators, n_filters, n_propagate,
+    def __init__(self, normalizer, n_aggregators, n_filters, n_propagate,
                  output_activation=None,
                  quantize_transforms=False,
                  simplified=True,
@@ -60,6 +60,7 @@ class GarNet(keras.layers.Layer):
         super().__init__(**kwargs)
         
         self._simplified = simplified
+        self._normalizer = normalizer
         self._quantize_transforms = quantize_transforms
         self._output_activation=output_activation
         self._collapse = collapse
@@ -136,11 +137,17 @@ class GarNet(keras.layers.Layer):
         #vertex_mask = K.expand_dims(K.cast(K.less(vertex_indices, K.cast(num_vertex, 'int32')), 'float32'), axis=-1)
         
         ### Masks based on an energy cut off, compares last feature
-        
-        energy_min = 0.0
-        vertex_mask = K.cast(K.less(energy_min, data[..., 3:4]), 'float32')
-        num_vertex = K.sum(vertex_mask)
+        if self._normalizer == 'log':
+            energy_min = 0.0
+        elif self._normalizer == 'std':
+            energy_min = -2.0
+        elif self._normalizer == 'max':
+            energy_min = 0.001
+        else:
+            energy_min = -1.0
 
+        vertex_mask = K.cast(K.less(energy_min, data[..., 3:4]), 'float32')
+        num_vertex = K.sum(vertex_mask, axis=-2)
         return data, num_vertex, vertex_mask
 
     
@@ -213,6 +220,7 @@ class GarNet(keras.layers.Layer):
         
         config.update({
             'simplified': self._simplified,
+            'normalizer': self._normalizer,
             'collapse':self._collapse,
             'output_activation':self._output_activation,
             'quantize_transforms':self._quantize_transforms,

@@ -66,9 +66,11 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
                 xlabel='Cluster Calib Hits', ylabel='Cluster Energy / Calib Hits'):
     fig = plt.figure()
     ax = fig.add_subplot()
+
     with np.errstate(divide='ignore'):
         x = target
         y = np.nan_to_num(pred / target, 0.0)
+
     try: 
         assert len(bins) == 2
         xbin = bns[0]
@@ -76,7 +78,9 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
     except:
         xbin = [10**exp for exp in np.arange(-0.9, 3.1, 0.1)]
         ybin = np.arange(0.1, 3.1, 0.1)
+
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
+
     hh = ax.hist2d(x, y, bins=[xbin, ybin], cmap='gist_earth_r', norm=LogNorm(), zorder=-1)
     ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black')
     for s in stat:
@@ -97,30 +101,47 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
     fig.colorbar(hh[3], ax=ax)
     return fig
 
-def regResponseOverlay(xdict, ydict, stat='median',
-                       xlabel='Cluster Calib Hits',
-                       ylabel='Cluster Energy / Calib Hits',
-                       bins=None):
+def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title='Regression Response Comparison',
+                       xlabel='Cluster Calib Hits', ylabel='Cluster Energy / Calib Hits'):
     """ """
     fig = plt.figure()
     ax = fig.add_subplot()
     
+    x = {}
+    y = {}
+    
+    with np.errstate(divide='ignore'):
+        for i in range(len(labels)):
+            x[labels[i]] = targets[i]
+            y[labels[i]] = np.nan_to_num(preds[i] / targets[i], 0.0)
     try: 
         assert len(bins) == 2
         xbin = bins[0]
         ybin = bins[1]
     except:
         xbin = [10**exp for exp in np.arange(-1.0, 3.1, 0.1)]
+        
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
-    profile_stats = {label:stats.binned_statistic(xdict[label], ydict[label], bins=xbin, statistics=stat).statistic for label in xdict}
-    labels = xdict.keys()
-    ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black')
-    for label in labels:
-        ax.plot(xcenter, profile_stats[label])
+    
+    for s in stat:
+        for label in labels:
+            if s == 'stdmean':
+                upper = stats.binned_statistic(x[label], y[label], bins=xbin, statistic='mean').statistic + \
+                np.abs(stats.binned_statistic(x[label], y[label], bins=xbin, statistic='std').statistic)
+                lower = stats.binned_statistic(x[label], y[label], bins=xbin, statistic='mean').statistic - \
+                np.abs(stats.binned_statistic(x[label], y[label], bins=xbin, statistic='std').statistic)
+                ax.fill_between(xcenter, lower, upper, alpha=0.2)
+            else:      
+                ps = stats.binned_statistic(x[label], y[label], bins=xbin, statistic=s).statistic
+                ax.plot(xcenter, ps)
+
+    ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black', zorder=0)
+
     ax.set_xscale('log')
     ax.set_ylim(0, 3)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+    ax.set_title(title)
     ax.legend(labels, loc='best')
     return fig 
     

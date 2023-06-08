@@ -5,9 +5,15 @@ K = keras.backend
 
 from util.Layers import *
 
+def scheduler(epoch, lr):
+    if epoch < 15:
+        return lr
+    else:
+        return lr*tf.math.exp(-0.03)
+
 class GarNetModel(keras.Model):
     """ """
-    def __init__(self, alpha=0.50, normalizer=None, aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), summarize=True, **kwargs):
+    def __init__(self, alpha=0.50, normalizer='log', aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), summarize=False, **kwargs):
         """ """
         super().__init__(**kwargs)
         self.alpha = alpha
@@ -27,7 +33,7 @@ class GarNetModel(keras.Model):
         self.input_dense = self.add_layer(keras.layers.Dense, 8, activation='tanh', name='input_dense')
         
         for i, (n_aggregators, n_filters, n_propagate) in enumerate(block_params):
-            garnet = self.add_layer(GarNet, n_aggregators, n_filters, n_propagate, name='garnet_%d' % i)
+            garnet = self.add_layer(GarNet, normalizer, n_aggregators, n_filters, n_propagate, name='garnet_%d' % i)
             batchnorm = self.add_layer(keras.layers.BatchNormalization, momentum=momentum, name='batchnorm_%d' % i)
             
             self.blocks.append((garnet, batchnorm))

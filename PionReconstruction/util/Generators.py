@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 class Generator:
     """ """
-    def __init__(self, generator_name, save_type, file_list, cellGeo, batch_size, normalizer,
+    def __init__(self, generator_name, save_type, file_list, cellGeo, batch_size, normalizer=('log', None),
                  labeled=True, shuffle=True, num_procs=32, preprocess=False, output_dir=None, noisy=False):
         """ Initialization """
         self.name = generator_name
@@ -133,10 +133,10 @@ class Generator:
             
 class garnetDataGenerator(Generator):
     """ """
-    def __init__(self, file_list, cellGeo_file, batch_size, normalizer=None, name='',
+    def __init__(self, file_list, cellGeo_file, batch_size, normalizer=None, name='garnet',
                 labeled=False, shuffle=True, num_procs=32, preprocess=False, output_dir=None, noisy=False):
         """ """
-        super().__init__(name + 'garnet', 'p', file_list, cellGeo_file, batch_size, normalizer,
+        super().__init__(name, 'p', file_list, cellGeo_file, batch_size, normalizer,
                          labeled, shuffle, num_procs, preprocess, output_dir, noisy)
         
     def preprocessor(self, worker_id):
@@ -183,13 +183,16 @@ class garnetDataGenerator(Generator):
                             cell_eta = cell_eta - cluster_eta
                             cell_phi = cell_phi - cluster_phi
                             with np.errstate(divide='ignore', invalid='ignore'):
-                                scaler = StandardScaler()
-                                cell_e = np.nan_to_num(np.log(cell_e), nan=0.0, posinf=0.0, neginf=0.0)
-                                #cell_e = scaler.fit_transform(np.reshape(cell_e, (-1, 1))).reshape(-1,)
-                                if self.normalizer == 'log':
+                                if self.normalizer[0] == 'log':
+                                    cell_e = np.nan_to_num(np.log(cell_e), nan=0.0, posinf=0.0, neginf=0.0)
                                     target_E = np.nan_to_num(np.log(target_E), nan=0.0, posinf=0.0, neginf=0.0)
-                                elif self.normalizer == 'std':
-                                    target_E = scaler.fit_transform(np.reshape(target_E, (-1, 1))).reshape(-1,)
+                                elif self.normalizer[0] == 'max':
+                                    cell_e = np.array(cell_e) / self.normalizer[1]
+                                    target_E = np.array(target_E) / self.normalizer[1]
+                                elif self.normalizer[0] == 'std':
+                                    scaler = self.normalizer[1]
+                                    cell_e = scaler.transform(np.reshape(cell_e, (-1, 1))).reshape(-1,)
+                                    target_E = scaler.transform(np.reshape(target_E, (-1, 1))).reshape(-1,)
                             # Clipping and Padding
                             PADLENGTH = 128
                             data = np.stack((cell_eta, cell_phi, cell_samp, cell_e), axis=-1)
