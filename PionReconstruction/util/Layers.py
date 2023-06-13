@@ -1,6 +1,4 @@
-### num vertex is not computed correctly, summing over batch rather than per event
-
-
+import tensorflow as tf
 import tensorflow.keras as keras
 
 K = keras.backend
@@ -46,25 +44,36 @@ class GlobalExchange(keras.layers.Layer):
         """ """
         return input_shape[:2] + (input_shape[2] * 2,)
     
+    def get_config(self):
+        config = super().get_config()
+        
+        config.update({
+            'vertex_mask': self.vertex_mask,
+            'num_vertices': self.num_vertices})
+        
+        return config
+        
+    
 class GarNet(keras.layers.Layer):
     """ """
-    def __init__(self, normalizer, n_aggregators, n_filters, n_propagate,
+    def __init__(self, n_aggregators, n_filters, n_propagate,
                  output_activation=None,
                  quantize_transforms=False,
                  simplified=True,
                  mean_by_nvert=False,
                  collapse=None,
+                 input_format='xn',
                  **kwargs):
         """ """
         
         super().__init__(**kwargs)
         
         self._simplified = simplified
-        self._normalizer = normalizer
         self._quantize_transforms = quantize_transforms
         self._output_activation=output_activation
         self._collapse = collapse
         self._mean_by_nvert = mean_by_nvert
+        self._input_format = input_format
         
         self._setup_transforms(n_aggregators, n_filters, n_propagate)
         
@@ -89,7 +98,10 @@ class GarNet(keras.layers.Layer):
 
     def build(self, input_shape):
         """ """
-        data_shape = input_shape
+        if self._input_format == 'x':
+            data_shape = input_shape
+        elif self._input_format == 'xn':
+            data_shape, _ = input_shape
             
         self._build_transforms(data_shape)
         
@@ -124,21 +136,22 @@ class GarNet(keras.layers.Layer):
     
     def _unpack_input(self, x):
         """ """
+        if self._input_format == 'x':
+            data = x
+            
+            vertex_mask = K.cast(K.not_equal(data[..., 3:4], 0.0), 'float32')
+            num_vertex = K.sum(vertex_mask, axis=-2)
+        elif self._input_format == 'xn':
+            data, num_vertex = x
         
-        data = x
+            data_shape = K.shape(data)
+            B = data_shape[0]
+            V = data_shape[1]
+            vertex_indices = K.tile(K.expand_dims(K.arange(0, V), axis=0), (B, 1)) # (B, [0..V-1])
+            vertex_mask = K.expand_dims(K.cast(K.less(vertex_indices, K.cast(num_vertex, 'int32')), 'float32'), axis=-1) # (B, V, 1)
+            num_vertex = K.cast(num_vertex, 'float32')
         
-        ### Masks based on an energy cut off, compares last feature
-        if self._normalizer == 'log':
-            energy_min = 0.0
-        elif self._normalizer == 'std':
-            energy_min = 0.003
-        elif self._normalizer == 'max':
-            energy_min = 0.0
-
-        vertex_mask = K.cast(K.less(energy_min, data[..., 3:4]), 'float32')
-        num_vertex = K.sum(vertex_mask, axis=-2)
         return data, num_vertex, vertex_mask
-
     
     def _garnet(self, data, num_vertex, vertex_mask, in_transform, d_compute, out_transform):
         """ """
@@ -209,8 +222,8 @@ class GarNet(keras.layers.Layer):
         
         config.update({
             'simplified': self._simplified,
-            'normalizer': self._normalizer,
             'collapse':self._collapse,
+            'input_format':self._input_format,
             'output_activation':self._output_activation,
             'quantize_transforms':self._quantize_transforms,
             'mean_by_nvert':self._mean_by_nvert})
@@ -237,3 +250,57 @@ class GarNet(keras.layers.Layer):
         else:
             out = K.reshape(out, (-1, edge_weights.shape[1], features.shape[-1] * features.shape[-2]))
         return out
+
+class GarNetStack(GarNet):
+    """
+    Stacked version of GarNet. First three arguments to the constructor must be lists of integers.
+    Basically offers no performance advantage, but the configuration is consolidated (and is useful
+    when e.g. converting the layer to HLS)
+    """
+    
+    def _setup_transforms(self, n_aggregators, n_filters, n_propagate):
+        self._transform_layers = []
+        for it, (p, a, f) in enumerate(zip(n_propagate, n_aggregators, n_filters)):
+            if self._quantize_transforms:
+                input_feature_transform = NamedQDense(p, kernel_quantizer=ternary_1_05(), bias_quantizer=ternary_1_05(), name=('FLR%d' % it))
+                output_feature_transform = NamedQDense(f, activation=self._output_activation, kernel_quantizer=ternary_1_05(), name=('Fout%d' % it))
+            else:
+                input_feature_transform = NamedDense(p, name=('FLR%d' % it))
+                output_feature_transform = NamedDense(f, activation=self._output_activation, name=('Fout%d' % it))
+
+            aggregator_distance = NamedDense(a, name=('S%d' % it))
+
+            self._transform_layers.append((input_feature_transform, aggregator_distance, output_feature_transform))
+
+        self._sublayers = sum((list(layers) for layers in self._transform_layers), [])
+
+    def _build_transforms(self, data_shape):
+        for in_transform, d_compute, out_transform in self._transform_layers:
+            in_transform.build(data_shape)
+            d_compute.build(data_shape)
+            if self._simplified:
+                out_transform.build(data_shape[:2] + (d_compute.units * in_transform.units,))
+            else:
+                out_transform.build(data_shape[:2] + (data_shape[2] + d_compute.units * in_transform.units + d_compute.units,))
+
+            data_shape = data_shape[:2] + (out_transform.units,)
+
+    def call(self, x):
+        data, num_vertex, vertex_mask = self._unpack_input(x)
+
+        for in_transform, d_compute, out_transform in self._transform_layers:
+            data = self._garnet(data, num_vertex, vertex_mask, in_transform, d_compute, out_transform)
+    
+        output = self._collapse_output(data)
+
+        return output
+
+    def compute_output_shape(self, input_shape):
+        return self._get_output_shape(input_shape, self._transform_layers[-1][2])
+
+    def _add_transform_config(self, config):
+        config.update({
+            'n_propagate': list(ll[0].units for ll in self._transform_layers),
+            'n_aggregators': list(ll[1].units for ll in self._transform_layers),
+            'n_filters': list(ll[2].units for ll in self._transform_layers),
+            'n_sublayers': len(self._transform_layers)})

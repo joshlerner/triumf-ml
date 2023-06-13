@@ -16,18 +16,21 @@ class Plotter:
     def save(self, outpath, **kwargs):
         self.fig.savefig(outpath, **kwargs) 
 
-def training(history, metric, validate=True, title=None, xlabel='epoch', ylabel=None, scale=None):
+def training(history, metrics, validate=True, title=None, xlabel='epoch', ylabel=None, scale=None):
     """ """
     labels = []
     fig = plt.figure()
     ax = fig.add_subplot()
-    if title is None: title = metric
-    if ylabel is None: ylabel = metric
-    ax.plot(history[metric])
-    labels.append('train')
-    if validate:
-        ax.plot(history['val_' + metric])
-        labels.append('val')
+    if title is None: title = metrics[0]
+    if ylabel is None: ylabel = metrics[0]
+    
+    for metric in metrics:
+        color = next(ax._get_lines.prop_cycler)['color']
+        ax.plot(history[metric], linestyle='-', color=color)
+        labels.append('train_' + metric)
+        if validate:
+            ax.plot(history['val_' + metric], linestyle='--', color=color)
+            labels.append('val_' + metric)
     ax.set_title(title)
     ax.set_ylabel(ylabel)
     ax.set_xlabel(xlabel)
@@ -35,31 +38,46 @@ def training(history, metric, validate=True, title=None, xlabel='epoch', ylabel=
     ax.legend(labels, loc='best')
     return fig
 
-def roc(pred, target, label='', title='ROC', xlabel='Rejection Rate', ylabel='Identification Rate'):
-    labels = []
-    labels.append(label)
+def roc(preds, targets, labels, title='ROC', xlabel='Rejection Rate', ylabel='Identification Rate'):
     fig = plt.figure()
     ax = fig.add_subplot()
-    fp, tp, threshs = roc_curve(target, pred)
-    score = roc_auc_score(target, pred)
-    ax.plot(1-fp, tp)
-    labels[0] = labels[0] + f' AUC: {score:.3f}'
+    
+    fps = {}
+    tps = {}
+    scores = {}
+    
+    for i in range(len(labels)):
+        fps[labels[i]], tps[labels[i]], _ = roc_curve(targets[i], preds[i])
+        scores[labels[i]] = roc_auc_score(targets[i], preds[i])
+        
+    for i, label in enumerate(labels):
+        ax.plot(1-fps[label], tps[label])
+        labels[i] = labels[i] + f' AUC: {scores[label]:.3f}'
+    
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.legend(labels, loc='best')
     return fig
 
-def efficiency(pred, target, label=None, title='Classification Efficiency', xlabel='Efficiency', ylabel='Rejection Rate'):
+def efficiency(preds, targets, labels, title='Classification Efficiency', xlabel='Efficiency', ylabel='Rejection Rate'):
     fig = plt.figure()
     ax = fig.add_subplot()
-    fp, tp, threshs = roc_curve(target, pred)
+    
+    fps = {}
+    tps = {}
+    
+    for i in range(len(labels)):
+        fps[labels[i]], tps[labels[i]], _ = roc_curve(targets[i], preds[i])
+   
     with np.errstate(divide='ignore'):
-        ax.semilogy(tp, 1/fp)
+        for label in labels:
+            ax.semilogy(tps[label], 1/fps[label])
+
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
-    if label is not None: ax.legend(label, loc='best')
+    ax.legend(labels, loc='best')
     return fig
 
 def regResponse(pred, target, stat=['median'], bins=None, title='Regression Response', 
@@ -76,8 +94,8 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
         xbin = bns[0]
         ybin = bins[1]
     except:
-        xbin = [10**exp for exp in np.arange(-0.6, 3.1, 0.1)]
-        ybin = np.arange(0.5, 2.1, 0.1)
+        xbin = [10**exp for exp in np.arange(-1.0, 3.1, 0.1)]
+        ybin = np.arange(0, 3.1, 0.1)
 
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
 
@@ -94,7 +112,7 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
             ps = stats.binned_statistic(x, y, bins=xbin, statistic=s).statistic
             ax.plot(xcenter, ps, color='red')
     ax.set_xscale('log')
-    ax.set_ylim(0.5, 2)
+    ax.set_ylim(0, 3)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
@@ -119,7 +137,7 @@ def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title
         xbin = bins[0]
         ybin = bins[1]
     except:
-        xbin = [10**exp for exp in np.arange(-0.1, 3.1, 0.1)]
+        xbin = [10**exp for exp in np.arange(-1.0, 3.1, 0.1)]
         
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
     
@@ -135,10 +153,11 @@ def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title
                 ps = stats.binned_statistic(x[label], y[label], bins=xbin, statistic=s).statistic
                 ax.plot(xcenter, ps)
 
-    ax.plot([1, 1000], [1, 1], linestyle='--', color='black', zorder=0)
+    ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black', zorder=0)
 
     ax.set_xscale('log')
-    ax.set_ylim(0.5, 2)
+    ax.set_ylim(0, 3)
+    ax.set_xlim(0.1, 1000)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)

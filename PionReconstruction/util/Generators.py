@@ -17,12 +17,13 @@ import matplotlib.pyplot as plt
 
 class Generator:
     """ """
-    def __init__(self, generator_name, save_type, file_list, cellGeo, batch_size, normalizer=('log', None),
+    def __init__(self, generator_name, save_type, file_list, cellGeo, batch_size, normalizer=('log', None), data_format='xn',
                  labeled=True, shuffle=True, num_procs=32, preprocess=False, output_dir=None, noisy=False):
         """ Initialization """
         self.name = generator_name
         self.save_type = save_type
         self.normalizer = normalizer
+        self.data_format = data_format
         self.labeled = labeled
         self.preprocess = preprocess
         self.output_dir = output_dir
@@ -73,29 +74,43 @@ class Generator:
         """ """
         batch_data = []
         batch_targets = []
+        batch_ncell = []
         
         file_num = worker_id
         while file_num < self.num_files:
             with gzip.open(self.output_dir + f'{self.name}_{file_num:03d}.{self.save_type}', 'rb') as f:
                 file_data = pickle.load(f)
-            
             for i in range(len(file_data)):
                 batch_data.append(file_data[i][0])
                 batch_targets.append(file_data[i][1])
+                if self.data_format == 'xn':
+                    batch_ncell.append(file_data[i][2])
             
                 if len(batch_data) == self.batch_size:
-                    batch_targets = np.reshape(np.array(batch_targets), [-1, 3]).astype(np.float32)
+                    batch_targets = np.reshape(np.array(batch_targets), [-1, 3]).astype(np.float64)
                     
-                    batch_queue.put((np.array(batch_data), batch_targets))
+                    if self.data_format == 'xn':
+                        batch_queue.put(([np.array(batch_data).astype(np.float64), np.array(batch_ncell).astype(np.float64)], 
+                                         {'classification':batch_targets[:,0:2], 'regression':batch_targets[:,-1]}))
+                    else:
+                        batch_queue.put((np.array(batch_data).astype(np.float64), 
+                                         {'classification':batch_targets[:,0:2], 'regression':batch_targets[:,-1]}))
                     
                     batch_data = []
                     batch_targets = []
+                    batch_ncell = []
                     
             file_num += self.num_procs
         
         if len(batch_data) > 0:
-            batch_targets = np.reshape(np.array(batch_targets), [-1,3]).astype(np.float32)
-            batch_queue.put((np.array(batch_data), batch_targets))
+            batch_targets = np.reshape(np.array(batch_targets), [-1,3]).astype(np.float64)
+            
+            if self.data_format == 'xn':
+                batch_queue.put(([np.array(batch_data).astype(np.float64), np.array(batch_ncell).astype(np.float64)], 
+                                 {'classification':batch_targets[:,0:2], 'regression':batch_targets[:,-1]}))
+            else:
+                batch_queue.put((np.array(batch_data).astype(np.float64), 
+                                 {'classification':batch_targets[:,0:2], 'regression':batch_targets[:,-1]}))
     
     def check_procs(self):
         """ """
@@ -133,10 +148,10 @@ class Generator:
             
 class garnetDataGenerator(Generator):
     """ """
-    def __init__(self, file_list, cellGeo_file, batch_size, normalizer=None, name='garnet',
+    def __init__(self, file_list, cellGeo_file, batch_size, normalizer=('log', None), name='garnet', data_format='xn',
                 labeled=False, shuffle=True, num_procs=32, preprocess=False, output_dir=None, noisy=False):
         """ """
-        super().__init__(name, 'p', file_list, cellGeo_file, batch_size, normalizer,
+        super().__init__(name, 'p', file_list, cellGeo_file, batch_size, normalizer, data_format,
                          labeled, shuffle, num_procs, preprocess, output_dir, noisy)
         
     def preprocessor(self, worker_id):
@@ -192,17 +207,23 @@ class garnetDataGenerator(Generator):
                                     target_E = scaler.transform(np.reshape(target_E, (-1, 1))).reshape(-1,)
                                 elif self.normalizer[0] == 'std':
                                     scaler = self.normalizer[1]
-                                    cell_e = scaler.transform(np.reshape(cell_e, (-1, 1))).reshape(-1,) - scaler.transform([[0]])[0,0]
-                                    target_E = scaler.transform(np.reshape(target_E, (-1, 1))).reshape(-1,) - scaler.transform([[0]])[0,0]
+                                    cell_e = scaler.transform(np.reshape(cell_e, (-1, 1))).reshape(-1,)
+                                    target_E = scaler.transform(np.reshape(target_E, (-1, 1))).reshape(-1,)
                             # Clipping and Padding
                             PADLENGTH = 128
                             data = np.stack((cell_eta, cell_phi, cell_samp, cell_e), axis=-1)
-                            data = np.pad(data[0:128], [(0, max(0, PADLENGTH-len(data))), (0, 0)], 'constant')
+                            n_cell = min(len(data), PADLENGTH)
+                            data = np.pad(data[0:PADLENGTH], [(0, max(0, PADLENGTH-n_cell)), (0, 0)], 'constant', constant_values=0.0)
                             if not self.labeled:
                                 label = np.round(event_data['cluster_EM_PROBABILITY'][event][cluster])
                             target = np.append(tf.keras.utils.to_categorical(label, 2), target_E)
                             if cluster_E > 0.5:
-                                preprocessed_data.append((data, target))
+                                if self.data_format == 'xn':
+                                    preprocessed_data.append((data, target, n_cell))
+                                elif self.data_format == 'x':
+                                    preprocessed_data.append((data, target))
+                                else:
+                                    raise ValueError(f'input_format must be one of [\'x\', \'xn\'] not {self.input_format}')
                                 
             if self.shuffle: np.random.shuffle(preprocessed_data)
 

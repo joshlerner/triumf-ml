@@ -1,29 +1,68 @@
 import tensorflow as tf
 import tensorflow.keras as keras
+from time import time
 
 K = keras.backend
 
 from util.Layers import *
 
-def scheduler(epoch, lr):
-    if epoch < 15:
-        return lr
-    else:
-        return lr*tf.math.exp(-0.05)
-
-class GarNetModel(keras.Model):
+def GarNetModel(aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), 
+                input_format='xn', vmax=128, simplified=True, collapse='mean', quantize=False):
     """ """
-    def __init__(self, alpha=0.50, normalizer='log', 
-                 aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), summarize=False, **kwargs):
+    x = keras.layers.Input(shape=(vmax, 4))
+    n = keras.layers.Input(shape=(1,), dtype='uint16')
+    
+    if input_format == 'xn': 
+        inputs = [x, n]
+    elif input_format == 'x':
+        inputs = x
+    else:
+        raise ValueError(f'input_format must be one of [\'x\', \'xn\'] not {input_format}')
+        
+    v = GarNetStack(aggregators, filters, propagate, 
+                    simplified=simplified, collapse=collapse, 
+                    input_format=input_format, output_activation=None, name='garnet', quantize_transforms=quantize)(inputs)
+    v = keras.layers.Dense(16, activation='relu')(v)
+    v = keras.layers.Dense(8, activation='relu')(v)
+    b = keras.layers.Dense(2, activation='sigmoid', name='classification')(v)
+    p = keras.layers.Dense(1, name='regression')(v)
+    outputs = [b, p]
+
+    return keras.Model(inputs=inputs, outputs=outputs)
+
+class PrinterCallback(tf.keras.callbacks.Callback):
+
+    def on_epoch_begin(self, epoch, logs=None):
+        self.start = time()
+        self.epoch = epoch
+
+    def on_batch_end(self, batch, logs=None):
+        prefix = f'Epoch {self.epoch}/{self.params["epochs"]}: '
+        size = 50
+        count = self.params["steps"]
+        x = int(size*batch/count)
+
+        print(f"{prefix}[{'='*x}{('.'*(size-x))}] {batch}/{count}", end='\r', flush=True)
+        
+    def on_epoch_end(self, epoch, logs=None):
+        self.end = time()
+        prefix = f'Epoch {epoch}/{self.params["epochs"]}: '
+        size = 50
+        count = self.params["steps"]
+        print(f"{prefix}[{'='*size}] {count}/{count}")
+        print(f'{int(self.end - self.start):2d}s - loss: {logs["loss"]:.4f} - val loss: {logs["val_loss"]:.4f}')
+
+
+class GarNetClusteringModel(keras.Model):
+    """ """
+    def __init__(self, aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), **kwargs):
         """ """
         super().__init__(**kwargs)
-        self.alpha = alpha
-        self.normalizer = normalizer
+        
         self.aggregators = aggregators
         self.filters = filters
         self.propagate = propagate
-        self.summarize = summarize
-        self.kwargs = kwargs
+        
         self.blocks = []
         
         block_params = zip(aggregators, filters, propagate)
@@ -43,18 +82,6 @@ class GarNetModel(keras.Model):
         self.output_dense_1 = self.add_layer(keras.layers.Dense, 8, activation='relu', name='output_1')
         self.output_classification = self.add_layer(keras.layers.Dense, 2, activation='sigmoid', name='classification')
         self.output_regression = self.add_layer(keras.layers.Dense, 1, name='regression')
-        
-        def loss_fcn(y_true, y_pred):
-            bce = keras.losses.BinaryCrossentropy()
-            mse = keras.losses.MeanSquaredError()
-            #def mse(ytrue, ypred):
-            #        return ((y_true - y_pred)/(y_true + K.epsilon()))**2
-            return alpha*bce(y_true[:,0:2], y_pred[:,0:2]) + (1-alpha)*mse(y_true[:,2:3], y_pred[:,2:3])
-        
-        self.compile(loss=loss_fcn, optimizer=keras.optimizers.Adam(learning_rate=0.001), metrics=['accuracy'])
-        
-        if summarize:
-            self.summary()
         
     def call(self, inputs):
         """ """
@@ -87,19 +114,11 @@ class GarNetModel(keras.Model):
         self.layers.append(layer)
         return layer
     
-    def summary(self):
-        """ """
-        inputs = keras.Input(shape=(128, 4,))
-        outputs = self.call(inputs)
-        keras.Model(inputs=inputs, outputs=outputs, name=self.name).summary() 
-    
     def get_config(self):
-        return {'alpha':self.alpha,
-                'normalizer':self.normalizer,
-                'aggregators':self.aggregators,
-                'filters':self.filters,
-                'propagate':self.propagate,
-                'summarize':self.summarize}
+        config = {'aggregators':self.aggregators,
+                  'filters':self.filters,
+                  'propagate':self.propagate}
+        return config
     
     @classmethod
     def from_config(cls, config):
