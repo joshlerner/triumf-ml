@@ -1,5 +1,7 @@
 import tensorflow as tf
 import tensorflow.keras as keras
+import numpy as np
+import hls4ml
 from time import time
 
 K = keras.backend
@@ -30,6 +32,125 @@ def GarNetModel(aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8,
 
     return keras.Model(inputs=inputs, outputs=outputs)
 
+def keras_weights(model):
+    """ """
+    names = []
+    weights = []
+    for layer in model.layers:
+        for idx, weight in enumerate(layer.get_weights()):
+            name = layer.weights[idx].name[:-2]
+            if name.endswith('kernel'):
+                name = name[:-7].replace('garnet/','') + '/w'
+            if name.endswith('bias'):
+                name = name[:-5].replace('garnet/','') + '/b'
+            names.append(name)
+            
+            w = weight.flatten()
+            w = np.abs(w[w != 0])
+            weights.append(w)
+
+    return names, weights
+
+def keras_activations(model, x):
+    """ """
+    activations = []
+    names = []
+    for layer in model.layers:
+        if not isinstance(layer, keras.layers.InputLayer):
+            try:
+                for sub in layer._sublayers:
+                    tmp_model = keras.models.Model(inputs=model.input, outputs=sub.output)
+                    y = tmp_model.predict(x).flatten()
+                    y = np.abs(y[y != 0])
+                    activations.append(y)
+                    names.append(sub.name)
+            except:
+                tmp_model = keras.models.Model(inputs=model.input, outputs=layer.output)
+                y = tmp_model.predict(x).flatten()
+                y = np.abs(y[y != 0])
+                activations.append(y)
+                names.append(layer.name)
+
+    return names, activations
+
+def hls_weights(hls_model):
+    names = []
+    weights = []
+
+    for layer in hls_model.get_layers():
+        for weight in layer.get_weights():
+            name = weight.name
+            if 'input_transform_' in name:
+                name = name.replace('input_transform_', 'FLR')[:-1]
+                name = name.replace('_', '/')
+            elif 'aggregator_distance_' in name:
+                name = name.replace('aggregator_distance_', 'S')[:-1]
+                name = name.replace('_', '/')
+            elif 'output_transform_' in name:
+                name = name.replace('output_transform_', 'Fout')[:-1]
+                name = name.replace('_', '/')
+            else:
+                name = layer.name + '/' + weight.name[0]
+            
+            names.append(name)
+            
+            w = weight.data.flatten()
+            w = np.abs(w[w != 0])
+            weights.append(w)
+
+    return names, weights
+
+def hls_activations(hls_model, x):
+    names = []
+    activations = []
+    
+    _, trace = hls_model.trace(x)
+
+    for layer in trace.keys():
+        y = trace[layer].flatten()
+        y = abs(y[y != 0])
+        activations.append(y)
+        names.append(layer)
+
+    return names, activations
+
+def weight_types(hls_model):
+    """ """
+    precisions = {'layer': [], 'low': [], 'high': []}
+    for layer in hls_model.get_layers():
+        for weight in layer.get_weights():
+            name = weight.name
+            if 'input_transform_' in name:
+                name = name.replace('input_transform_', 'FLR')[:-1]
+                name = name.replace('_', '/')
+            elif 'aggregator_distance_' in name:
+                name = name.replace('aggregator_distance_', 'S')[:-1]
+                name = name.replace('_', '/')
+            elif 'output_transform_' in name:
+                name = name.replace('output_transform_', 'Fout')[:-1]
+                name = name.replace('_', '/')
+            else:
+                name = layer.name + '/' + weight.name[0]
+            t = weight.type
+            W, I, F, S = hls4ml.model.profiling.ap_fixed_WIFS(t.precision)
+            precisions['layer'].append(name)
+            precisions['low'].append(-F)
+            precisions['high'].append(I - 1 if S else I)
+    
+    return precisions
+
+def activation_types(hls_model):
+    """ """
+    precisions = {'layer': [], 'low': [], 'high': []}
+    for layer in hls_model.get_layers():
+        t = layer.get_output_variable().type
+        W, I, F, S = hls4ml.model.profiling.ap_fixed_WIFS(t.precision)
+        precisions['layer'].append(layer.name)
+        precisions['low'].append(-F)
+        precisions['high'].append(I - 1 if S else I)
+    
+    return precisions
+
 class PrinterCallback(tf.keras.callbacks.Callback):
 
     def on_epoch_begin(self, epoch, logs=None):
@@ -37,16 +158,16 @@ class PrinterCallback(tf.keras.callbacks.Callback):
         self.epoch = epoch
 
     def on_batch_end(self, batch, logs=None):
-        prefix = f'Epoch {self.epoch}/{self.params["epochs"]}: '
+        prefix = f'Epoch {self.epoch + 1}/{self.params["epochs"]}: '
         size = 50
         count = self.params["steps"]
-        x = int(size*batch/count)
+        x = int(size*(batch + 1)/count)
 
-        print(f"{prefix}[{'='*x}{('.'*(size-x))}] {batch}/{count}", end='\r', flush=True)
+        print(f"{prefix}[{'='*x}{('.'*(size-x))}] {batch + 1}/{count}", end='\r', flush=True)
         
     def on_epoch_end(self, epoch, logs=None):
         self.end = time()
-        prefix = f'Epoch {epoch}/{self.params["epochs"]}: '
+        prefix = f'Epoch {epoch + 1}/{self.params["epochs"]}: '
         size = 50
         count = self.params["steps"]
         print(f"{prefix}[{'='*size}] {count}/{count}")

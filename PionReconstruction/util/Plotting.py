@@ -1,8 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
+from matplotlib.patches import Rectangle
+from matplotlib import cm
 from sklearn.metrics import roc_auc_score, roc_curve
 import scipy.stats as stats
+
+from util.Models import keras_weights, keras_activations, hls_weights, hls_activations, weight_types, activation_types
 
 class Plotter:
     """ """
@@ -11,10 +15,146 @@ class Plotter:
         self.fig = function(**kwargs)
         
     def show(self):
+        self.fig.tight_layout()
         self.fig.show()
         
     def save(self, outpath, **kwargs):
-        self.fig.savefig(outpath, **kwargs) 
+        self.fig.savefig(outpath, **kwargs)
+        
+def weight_profile(model=None, hls_model=None, x=None):
+    """ """
+    weight_precisions = weight_types(hls_model)
+    activation_precisions = activation_types(hls_model)
+    
+    fig, ax = plt.subplots(2, 2, figsize=(16, 16))
+    
+    names = []
+    weights = []
+    
+    names, weights = keras_weights(model)
+    
+    names.reverse()
+    weights.reverse()
+    
+    colors = cm.Blues(np.linspace(0, 1, len(names)))
+    
+    bplot = ax[0][0].boxplot(weights, vert=False, medianprops=dict(linestyle='-', color='k'),
+                             showfliers=False, patch_artist=True, labels=names)
+    
+    fig.canvas.draw()
+    
+    ticks = {tick.get_text():tick.get_position()[1] for tick in ax[0][0].get_yticklabels()}
+    
+    for i, label in enumerate(weight_precisions['layer']):
+        if label in ticks.keys():
+            low = 2**weight_precisions['low'][i]
+            high = 2**weight_precisions['high'][i]
+            y = ticks[label]
+            rectangle = Rectangle((low, y - 0.4), high - low, 0.8, fill=True, color='grey', alpha=0.2)
+            ax[0][0].add_patch(rectangle)
+    
+    ax[0][0].set_xscale('log', base=2)
+    ax[0][0].set_title('Distribution of weights before optimization')
+    
+    for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(color)
+
+    names, weights = hls_weights(hls_model)
+
+    names.reverse()
+    weights.reverse()
+                      
+    colors = cm.Blues(np.linspace(0, 1, len(names)))
+    
+    bplot = ax[0][1].boxplot(weights, vert=False, medianprops=dict(linestyle='-', color='k'),
+                             showfliers=False, patch_artist=True, labels=names)
+    fig.canvas.draw()
+    
+    ticks = {tick.get_text():tick.get_position()[1] for tick in ax[0][1].get_yticklabels()}
+    
+    for i, label in enumerate(weight_precisions['layer']):
+        if label in ticks.keys():
+            low = 2**weight_precisions['low'][i]
+            high = 2**weight_precisions['high'][i]
+            y = ticks[label]
+            rectangle = Rectangle((low, y - 0.4), high - low, 0.8, fill=True, color='grey', alpha=0.2)
+            ax[0][1].add_patch(rectangle)
+
+    ax[0][1].set_xscale('log', base=2)
+    ax[0][1].set_title('Distribution of weights after optimization')
+    
+    for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(color)
+        
+    names, activations = keras_activations(model, x)
+    
+    activations.reverse()
+    names.reverse()
+    
+    if 'classification' in names:
+        cl_id = names.index('classification')
+    
+        del names[cl_id]
+        del activations[cl_id]
+    
+    colors = cm.Blues(np.linspace(0, 1, len(names)))
+    
+    bplot = ax[1][0].boxplot(activations, vert=False, medianprops=dict(linestyle='-', color='k'),
+                             showfliers=False, patch_artist=True, labels=names)
+    
+    fig.canvas.draw()
+    
+    ticks = {tick.get_text():tick.get_position()[1] for tick in ax[1][0].get_yticklabels()}
+    
+    for i, label in enumerate(activation_precisions['layer']):
+        if label in ticks.keys():
+            low = 2**activation_precisions['low'][i]
+            high = 2**activation_precisions['high'][i]
+            y = ticks[label]
+            rectangle = Rectangle((low, y - 0.4), high - low, 0.8, fill=True, color='grey', alpha=0.2)
+            ax[1][0].add_patch(rectangle)
+
+    ax[1][0].set_xscale('log', base=2)
+    ax[1][0].set_title('Distribution of activations after optimization')
+    
+    for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(color)
+        
+    names, activations = hls_activations(hls_model, x)
+    
+    activations.reverse()
+    names.reverse()
+    
+    if 'classification' in names:
+        cl_id = names.index('classification')
+    
+        del names[cl_id]
+        del activations[cl_id]
+    
+    colors = cm.Blues(np.linspace(0, 1, len(names)))
+    
+    bplot = ax[1][1].boxplot(activations, vert=False, medianprops=dict(linestyle='-', color='k'),
+                             showfliers=False, patch_artist=True, labels=names)
+    
+    fig.canvas.draw()
+    
+    ticks = {tick.get_text():tick.get_position()[1] for tick in ax[1][1].get_yticklabels()}
+    
+    for i, label in enumerate(activation_precisions['layer']):
+        if label in ticks.keys():
+            low = 2**activation_precisions['low'][i]
+            high = 2**activation_precisions['high'][i]
+            y = ticks[label]
+            rectangle = Rectangle((low, y - 0.4), high - low, 0.8, fill=True, color='grey', alpha=0.2)
+            ax[1][1].add_patch(rectangle)
+
+    ax[1][1].set_xscale('log', base=2)
+    ax[1][1].set_title('Distribution of activations after optimization')
+    
+    for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(color)
+
+    return fig
 
 def training(history, metrics, validate=True, title=None, xlabel='epoch', ylabel=None, scale=None):
     """ """

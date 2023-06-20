@@ -197,14 +197,14 @@ class garnetDataGenerator(Generator):
                             # Normalizing
                             cell_eta = cell_eta - cluster_eta
                             cell_phi = cell_phi - cluster_phi
+                            cell_samp = cell_samp*0.1
                             with np.errstate(divide='ignore', invalid='ignore'):
                                 if self.normalizer[0] == 'log':
-                                    cell_e = np.nan_to_num(np.log(cell_e), nan=0.0, posinf=0.0, neginf=0.0)
-                                    target_E = np.nan_to_num(np.log(target_E), nan=0.0, posinf=0.0, neginf=0.0)
+                                    cell_e = np.nan_to_num(np.log(cell_e)/10, nan=0.0, posinf=0.0, neginf=0.0)
+                                    target_E = np.nan_to_num(np.log(target_E)/10, nan=0.0, posinf=0.0, neginf=0.0)
                                 elif self.normalizer[0] == 'max':
-                                    scaler = self.normalizer[1]
-                                    cell_e = scaler.transform(np.reshape(cell_e, (-1, 1))).reshape(-1,)
-                                    target_E = scaler.transform(np.reshape(target_E, (-1, 1))).reshape(-1,)
+                                    cell_e = np.array(cell_e) / self.normalizer[1]
+                                    target_E = np.array(target_E) / self.normalizer[1]
                                 elif self.normalizer[0] == 'std':
                                     scaler = self.normalizer[1]
                                     cell_e = scaler.transform(np.reshape(cell_e, (-1, 1))).reshape(-1,)
@@ -217,7 +217,10 @@ class garnetDataGenerator(Generator):
                             if not self.labeled:
                                 label = np.round(event_data['cluster_EM_PROBABILITY'][event][cluster])
                             target = np.append(tf.keras.utils.to_categorical(label, 2), target_E)
-                            if cluster_E > 0.5:
+                            cut = cluster_E > 0.5
+                            if self.normalizer[0] == 'max':
+                                cut = cut and cluster_E < self.normalizer[1]
+                            if cut:
                                 if self.data_format == 'xn':
                                     preprocessed_data.append((data, target, n_cell))
                                 elif self.data_format == 'x':
