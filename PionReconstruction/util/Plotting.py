@@ -91,11 +91,11 @@ def weight_profile(model=None, hls_model=None, x=None):
     activations.reverse()
     names.reverse()
     
-    if 'classification' in names:
-        cl_id = names.index('classification')
+    #if 'classification' in names:
+        #cl_id = names.index('classification')
     
-        del names[cl_id]
-        del activations[cl_id]
+        #del names[cl_id]
+        #del activations[cl_id]
     
     colors = cm.Blues(np.linspace(0, 1, len(names)))
     
@@ -125,11 +125,11 @@ def weight_profile(model=None, hls_model=None, x=None):
     activations.reverse()
     names.reverse()
     
-    if 'classification' in names:
-        cl_id = names.index('classification')
+    #if 'classification' in names:
+        #cl_id = names.index('classification')
     
-        del names[cl_id]
-        del activations[cl_id]
+        #del names[cl_id]
+        #del activations[cl_id]
     
     colors = cm.Blues(np.linspace(0, 1, len(names)))
     
