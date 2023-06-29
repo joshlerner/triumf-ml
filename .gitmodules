@@ -1,0 +1,3 @@
+[submodule "src/hls4ml"]
+	path = src/hls4ml
+	url = https://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@github.com/joshlerner/hls4ml.git
