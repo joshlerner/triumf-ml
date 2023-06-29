@@ -271,7 +271,7 @@ def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title
     with np.errstate(divide='ignore'):
         for i in range(len(labels)):
             x[labels[i]] = targets[i]
-            y[labels[i]] = np.nan_to_num(preds[i] / targets[i], 0.0)
+            y[labels[i]] = np.nan_to_num(preds[i] / targets[i], posinf=1000.0, neginf=-1000.0)
     try: 
         assert len(bins) == 2
         xbin = bins[0]

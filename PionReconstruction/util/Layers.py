@@ -5,13 +5,16 @@ K = keras.backend
 
 try:
     from qkeras import QDense, ternary
+    from qkeras.quantizers import quantized_bits
 
     class NamedQDense(QDense):
         def add_weight(self, name=None, **kwargs):
             return super(NamedQDense, self).add_weight(name='%s_%s' % (self.name, name), **kwargs)
 
-    def ternary_1_05():
+    def quantizer():
+        #return quantized_bits(6, 0, alpha=1)
         return ternary(alpha=1., threshold=0.5)
+
 except ImportError:
     pass
 
@@ -57,7 +60,7 @@ class GlobalExchange(keras.layers.Layer):
 class GarNet(keras.layers.Layer):
     """ """
     def __init__(self, n_aggregators, n_filters, n_propagate,
-                 output_activation=None,
+                 output_activation='linear',
                  quantize_transforms=False,
                  simplified=True,
                  mean_by_nvert=False,
@@ -81,12 +84,12 @@ class GarNet(keras.layers.Layer):
         """ """
         if self._quantize_transforms:
             self._input_feature_transform = NamedQDense(n_propagate, 
-                                                        kernel_quantizer=ternary_1_05(),
-                                                        bias_quantizer=ternary_1_05(),
+                                                        kernel_quantizer=quantizer(),
+                                                        bias_quantizer=quantizer(),
                                                         name='FLR')
             self._output_feature_transform = NamedQDense(n_filters, 
                                                          activation=self._output_activation,
-                                                         kernel_quantizer=ternary_1_05(),
+                                                         kernel_quantizer=quantizer(),
                                                          name='Fout')
         else:
             self._input_feature_transform = NamedDense(n_propagate, name='FLR')
@@ -262,8 +265,8 @@ class GarNetStack(GarNet):
         self._transform_layers = []
         for it, (p, a, f) in enumerate(zip(n_propagate, n_aggregators, n_filters)):
             if self._quantize_transforms:
-                input_feature_transform = NamedQDense(p, kernel_quantizer=ternary_1_05(), bias_quantizer=ternary_1_05(), name=('FLR%d' % it))
-                output_feature_transform = NamedQDense(f, activation=self._output_activation, kernel_quantizer=ternary_1_05(), name=('Fout%d' % it))
+                input_feature_transform = NamedQDense(p, kernel_quantizer=quantizer(), bias_quantizer=quantizer(), name=('FLR%d' % it))
+                output_feature_transform = NamedQDense(f, activation=self._output_activation, kernel_quantizer=quantizer(), name=('Fout%d' % it))
             else:
                 input_feature_transform = NamedDense(p, name=('FLR%d' % it))
                 output_feature_transform = NamedDense(f, activation=self._output_activation, name=('Fout%d' % it))
