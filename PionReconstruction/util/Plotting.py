@@ -1,12 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, LinearSegmentedColormap
 from matplotlib.patches import Rectangle
 from matplotlib import cm
 from sklearn.metrics import roc_auc_score, roc_curve
 import scipy.stats as stats
 
-from util.Models import keras_weights, keras_activations, hls_weights, hls_activations, weight_types, activation_types
+from PionReconstruction.util.Models import keras_weights, keras_activations, hls_weights, hls_activations, weight_types, activation_types
 
 class Plotter:
     """ """
@@ -125,12 +125,6 @@ def weight_profile(model=None, hls_model=None, x=None):
     activations.reverse()
     names.reverse()
     
-    #if 'classification' in names:
-        #cl_id = names.index('classification')
-    
-        #del names[cl_id]
-        #del activations[cl_id]
-    
     colors = cm.Blues(np.linspace(0, 1, len(names)))
     
     bplot = ax[1][1].boxplot(activations, vert=False, medianprops=dict(linestyle='-', color='k'),
@@ -171,6 +165,27 @@ def training(history, metrics, validate=True, title=None, xlabel='epoch', ylabel
         if validate:
             ax.plot(history['val_' + metric], linestyle='--', color=color)
             labels.append('val_' + metric)
+    ax.set_title(title)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel(xlabel)
+    if scale is not None: plt.yscale(scale)
+    ax.legend(labels, loc='best')
+    return fig
+
+def trainingOverlay(histories, labels, metric, title=None, xlabel='epoch', ylabel=None, scale=None):
+    """ """
+    fig = plt.figure()
+    ax = fig.add_subplot()
+    if title is None: title = metric
+    if ylabel is None: ylabel = metric
+    colors = ['#733635ff', '#355373ff', '#357355ff']
+    for i, history in enumerate(histories):
+        color = colors[int(i/2)]
+        if i % 2 == 0:
+            linestyle = '-'
+        else:
+            linestyle = '--'
+        ax.plot(history[metric], linestyle=linestyle, color=color)
     ax.set_title(title)
     ax.set_ylabel(ylabel)
     ax.set_xlabel(xlabel)
@@ -221,7 +236,7 @@ def efficiency(preds, targets, labels, title='Classification Efficiency', xlabel
     return fig
 
 def regResponse(pred, target, stat=['median'], bins=None, title='Regression Response', 
-                xlabel='Cluster Calib Hits', ylabel='Cluster Energy / Calib Hits'):
+                xlabel='True Cluster Energy', ylabel='Predicted Energy / True Energy'):
     fig = plt.figure()
     ax = fig.add_subplot()
 
@@ -238,8 +253,10 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
         ybin = np.arange(0, 3.1, 0.1)
 
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
+    
+    color_map = LinearSegmentedColormap.from_list( 'garnet', ['#502625ff', '#733635ff', '#964645ff', '#b35c5bff', '#c37f7eff', '#ffffffff'] )
 
-    hh = ax.hist2d(x, y, bins=[xbin, ybin], cmap='gist_earth_r', norm=LogNorm(), zorder=-1)
+    hh = ax.hist2d(x, y, bins=[xbin, ybin], cmap=color_map.reversed(), norm=LogNorm(), zorder=-1)
     ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black')
     for s in stat:
         if s == 'stdmean':
@@ -250,7 +267,7 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
             ax.fill_between(xcenter, lower, upper, color='black', alpha=0.2)
         else:      
             ps = stats.binned_statistic(x, y, bins=xbin, statistic=s).statistic
-            ax.plot(xcenter, ps, color='red')
+            ax.plot(xcenter, ps, color='#8cc9caff')
     ax.set_xscale('log')
     ax.set_ylim(0, 3)
     ax.set_xlabel(xlabel)
@@ -260,10 +277,11 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
     return fig
 
 def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title='Regression Response Comparison',
-                       xlabel='Cluster Calib Hits', ylabel='Cluster Energy / Calib Hits'):
+                       xlabel='True Cluster Energy', ylabel='Predicted Energy / True Energy'):
     """ """
     fig = plt.figure()
     ax = fig.add_subplot()
+    colors = ['#733635ff', '#355373ff', '#357355ff']
     
     x = {}
     y = {}
@@ -282,16 +300,21 @@ def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
     
     for s in stat:
-        for label in labels:
+        for i, label in enumerate(labels):
+            color = colors[int(i/2)]
+            if i % 2 == 0:
+                linestyle = '-'
+            else:
+                linestyle = '--'
             if s == 'stdmean':
                 upper = stats.binned_statistic(x[label], y[label], bins=xbin, statistic='mean').statistic + \
                 np.abs(stats.binned_statistic(x[label], y[label], bins=xbin, statistic='std').statistic)
                 lower = stats.binned_statistic(x[label], y[label], bins=xbin, statistic='mean').statistic - \
                 np.abs(stats.binned_statistic(x[label], y[label], bins=xbin, statistic='std').statistic)
-                ax.fill_between(xcenter, lower, upper, alpha=0.2)
+                ax.fill_between(xcenter, lower, upper, color=color, alpha=0.2)
             else:      
                 ps = stats.binned_statistic(x[label], y[label], bins=xbin, statistic=s).statistic
-                ax.plot(xcenter, ps)
+                ax.plot(xcenter, ps, linestyle=linestyle, color=color)
 
     ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black', zorder=0)
 

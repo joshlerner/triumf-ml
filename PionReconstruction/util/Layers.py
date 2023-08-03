@@ -5,14 +5,12 @@ K = keras.backend
 
 try:
     from qkeras import QDense, ternary
-    from qkeras.quantizers import quantized_bits
 
     class NamedQDense(QDense):
         def add_weight(self, name=None, **kwargs):
             return super(NamedQDense, self).add_weight(name='%s_%s' % (self.name, name), **kwargs)
 
     def quantizer():
-        #return quantized_bits(6, 0, alpha=1)
         return ternary(alpha=1., threshold=0.5)
 
 except ImportError:
@@ -133,26 +131,20 @@ class GarNet(keras.layers.Layer):
                               self._aggregator_distance,
                               self._output_feature_transform)
         
-        output = self._collapse_output(output)
+        output = self._collapse_output(output, num_vertex)
         
         return output
     
     def _unpack_input(self, x):
         """ """
-        if self._input_format == 'x':
-            data = x
-            
-            vertex_mask = K.cast(K.not_equal(data[..., 3:4], 0.0), 'float32')
-            num_vertex = K.sum(vertex_mask, axis=-2)
-        elif self._input_format == 'xn':
-            data, num_vertex = x
+        data, num_vertex = x # 'xn' is the only HLS supported format
         
-            data_shape = K.shape(data)
-            B = data_shape[0]
-            V = data_shape[1]
-            vertex_indices = K.tile(K.expand_dims(K.arange(0, V), axis=0), (B, 1)) # (B, [0..V-1])
-            vertex_mask = K.expand_dims(K.cast(K.less(vertex_indices, K.cast(num_vertex, 'int32')), 'float32'), axis=-1) # (B, V, 1)
-            num_vertex = K.cast(num_vertex, 'float32')
+        data_shape = K.shape(data)
+        B = data_shape[0]
+        V = data_shape[1]
+        vertex_indices = K.tile(K.expand_dims(K.arange(0, V), axis=0), (B, 1))
+        vertex_mask = K.expand_dims(K.cast(K.less(vertex_indices, K.cast(num_vertex, 'int32')), 'float32'), axis=-1)
+        num_vertex = K.cast(num_vertex, 'float32')
         
         return data, num_vertex, vertex_mask
     
@@ -193,7 +185,7 @@ class GarNet(keras.layers.Layer):
         
         return updated_features
 
-    def _collapse_output(self, output):
+    def _collapse_output(self, output, num_vertex):
         """ """
         if self._collapse == 'mean':
             if self._mean_by_nvert:
@@ -294,7 +286,7 @@ class GarNetStack(GarNet):
         for in_transform, d_compute, out_transform in self._transform_layers:
             data = self._garnet(data, num_vertex, vertex_mask, in_transform, d_compute, out_transform)
     
-        output = self._collapse_output(data)
+        output = self._collapse_output(data, num_vertex)
 
         return output
 

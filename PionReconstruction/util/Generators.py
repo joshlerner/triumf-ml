@@ -102,12 +102,13 @@ class Generator:
             
 class garnetDataGenerator(Generator):
     """ """
-    def __init__(self, file_list, cellGeo_file, batch_size, normalizer=('log', None), name='garnet', data_format='xn',
+    def __init__(self, file_list, cellGeo_file, batch_size, normalizer=('log', None), name='garnet', data_format='xne', vmax=128,
                 labeled=False, shuffle=True, num_procs=32, preprocess=False, output_dir=None, noisy=False, filterfunc=None):
         """ """
         self.name = name
         self.normalizer = normalizer
         self.data_format = data_format
+        self.padlength = vmax
         self.noisy = noisy
         if filterfunc is None:
             def filterfunc(data):
@@ -145,6 +146,7 @@ class garnetDataGenerator(Generator):
                         for cluster in range(num_clusters):
 
                             cluster_E = event_data['cluster_E'][event][cluster]
+                            cut = cluster_E > 0.5
                             target_E = event_data['cluster_ENG_CALIB_TOT'][event][cluster]
 
                             cluster_eta = event_data['cluster_Eta'][event][cluster]
@@ -163,31 +165,32 @@ class garnetDataGenerator(Generator):
                             cell_samp = cell_samp*0.1
                             with np.errstate(divide='ignore', invalid='ignore'):
                                 if self.normalizer[0] == 'log':
+                                    cluster_E = np.nan_to_num(np.log(cluster_E)/10, nan=0.0, posinf=0.0, neginf=0.0)
                                     cell_e = np.nan_to_num(np.log(cell_e)/10, nan=0.0, posinf=0.0, neginf=0.0)
                                     target_E = np.nan_to_num(np.log(target_E)/10, nan=0.0, posinf=0.0, neginf=0.0)
                                 elif self.normalizer[0] == 'max':
-                                    cell_e = np.array(cell_e)
+                                    cluster_E = np.array(cluster_E) / self.normalizer[1]
+                                    cell_e = np.array(cell_e) / self.normalizer[1]
                                     target_E = np.array(target_E) / self.normalizer[1]
                                 elif self.normalizer[0] == 'std':
                                     scaler = self.normalizer[1]
+                                    cluster_E = scaler.transform(np.reshape(cluster_E, (-1, 1))).reshape(-1,)
                                     cell_e = scaler.transform(np.reshape(cell_e, (-1, 1))).reshape(-1,)
                                     target_E = scaler.transform(np.reshape(target_E, (-1, 1))).reshape(-1,)
                             # Clipping and Padding
-                            PADLENGTH = 128
                             data = np.stack((cell_eta, cell_phi, cell_samp, cell_e), axis=-1)
-                            n_cell = min(len(data), PADLENGTH)
-                            data = np.pad(data[0:PADLENGTH], [(0, max(0, PADLENGTH-n_cell)), (0, 0)], 'constant', constant_values=0.0)
+                            n_cell = min(len(data), self.padlength)
+                            data = np.pad(data[0:self.padlength], [(0, self.padlength-n_cell), (0, 0)], 'constant', constant_values=0.0)
                             if not self.labeled:
                                 label = np.round(event_data['cluster_EM_PROBABILITY'][event][cluster])
                             target = np.append(tf.keras.utils.to_categorical(label, 2), target_E)
-                            cut = cluster_E > 0.5
                             if cut:
                                 if self.data_format == 'xn':
                                     preprocessed_data.append((data, target, n_cell))
-                                elif self.data_format == 'x':
-                                    preprocessed_data.append((data, target))
+                                elif self.data_format == 'xne':
+                                    preprocessed_data.append((data, target, n_cell, cluster_E))
                                 else:
-                                    raise ValueError(f'input_format must be one of [\'x\', \'xn\'] not {self.input_format}')
+                                    raise ValueError(f'input_format must be one of [\'xn\', \'xne\'] not {self.data_format}')
                                 
             if self.shuffle: np.random.shuffle(preprocessed_data)
 
@@ -205,6 +208,7 @@ class garnetDataGenerator(Generator):
         batch_data = []
         batch_targets = []
         batch_ncell = []
+        batch_energy = []
         
         file_num = worker_id
         while file_num < self.num_files:
@@ -216,6 +220,10 @@ class garnetDataGenerator(Generator):
                     batch_targets.append(file_data[i][1])
                     if self.data_format == 'xn':
                         batch_ncell.append(file_data[i][2])
+                    elif self.data_format == 'xne':
+                        batch_ncell.append(file_data[i][2])
+                        batch_energy.append(file_data[i][3])
+                        
             
                 if len(batch_data) == self.batch_size:
                     batch_targets = np.reshape(np.array(batch_targets), [-1, 3]).astype(np.float64)
@@ -223,13 +231,16 @@ class garnetDataGenerator(Generator):
                     if self.data_format == 'xn':
                         batch_queue.put(([np.array(batch_data).astype(np.float64), np.array(batch_ncell).astype(np.float64)], 
                                          {'classification':batch_targets[:,0:2], 'regression':batch_targets[:,-1]}))
-                    else:
-                        batch_queue.put((np.array(batch_data).astype(np.float64), 
+                    elif self.data_format == 'xne':
+                        batch_queue.put(([np.array(batch_data).astype(np.float64), 
+                                          np.array(batch_ncell).astype(np.float64),
+                                          np.array(batch_energy).astype(np.float64)],
                                          {'classification':batch_targets[:,0:2], 'regression':batch_targets[:,-1]}))
                     
                     batch_data = []
                     batch_targets = []
                     batch_ncell = []
+                    batch_energy = []
                     
             file_num += self.num_procs
         
@@ -237,12 +248,13 @@ class garnetDataGenerator(Generator):
             batch_targets = np.reshape(np.array(batch_targets), [-1,3]).astype(np.float64)
             
             if self.data_format == 'xn':
-                batch_queue.put(([np.array(batch_data).astype(np.float64), np.array(batch_ncell).astype(np.float64)], 
+                batch_queue.put(([np.array(batch_data).astype(np.float64), np.array(batch_ncell).astype(np.float64)],
                                  {'classification':batch_targets[:,0:2], 'regression':batch_targets[:,-1]}))
-            else:
-                batch_queue.put((np.array(batch_data).astype(np.float64), 
+            elif self.data_format == 'xne':
+                batch_queue.put(([np.array(batch_data).astype(np.float64), 
+                                  np.array(batch_ncell).astype(np.float64),
+                                  np.array(batch_energy).astype(np.float64)],
                                  {'classification':batch_targets[:,0:2], 'regression':batch_targets[:,-1]}))
-                
 
 def loadGraphDictionary(graphTree):
     """ """

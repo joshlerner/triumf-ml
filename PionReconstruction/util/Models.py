@@ -6,28 +6,42 @@ from time import time
 
 K = keras.backend
 
-from util.Layers import *
+from PionReconstruction.util.Layers import *
 
-def GarNetModel(aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), 
-                input_format='xn', vmax=128, simplified=True, collapse='mean', quantize=False):
+def GarNetModel(aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), input_format='xne', vmax=128, simplified=True, collapse='mean', mean_by_nvert=True, quantize=False):
     """ """
-    x = keras.layers.Input(shape=(vmax, 4))
-    n = keras.layers.Input(shape=(1,), dtype='uint16')
+    layer1 = keras.layers.Dense(16, activation='relu', name='dense_1')
+    layer2 = keras.layers.Dense(8, activation='relu', name='dense_2')
+    classification = keras.layers.Dense(2, activation='sigmoid', name='classification')
+    regression = keras.layers.Dense(1, activation='linear', name='regression')
     
-    if input_format == 'xn': 
+    
+    x = keras.layers.Input(shape=(vmax, 4), name='data')
+    n = keras.layers.Input(shape=(1,), name='vertex', dtype='uint16')
+    e = keras.layers.Input(shape=(1,), name='energy')
+    
+    if input_format == 'xne':
+        inputs = [x, n, e]
+        def format_inputs(xne):
+            return xne[0:2]
+    elif input_format == 'xn':
         inputs = [x, n]
-    elif input_format == 'x':
-        inputs = x
+        def format_inputs(xn):
+            return xn
     else:
-        raise ValueError(f'input_format must be one of [\'x\', \'xn\'] not {input_format}')
+        raise NotImplementedError(f'GarNet only supports "xne" and "xn" input formats, not {input_format}')
         
+    
+
     v = GarNetStack(aggregators, filters, propagate, 
-                    simplified=simplified, collapse=collapse, 
-                    input_format=input_format, output_activation=None, name='garnet', quantize_transforms=quantize)(inputs)
-    v = keras.layers.Dense(16, activation='relu')(v)
-    v = keras.layers.Dense(8, activation='relu')(v)
-    b = keras.layers.Dense(2, activation='sigmoid', name='classification')(v)
-    p = keras.layers.Dense(1, name='regression')(v)
+                    simplified=simplified, mean_by_nvert=mean_by_nvert, collapse=collapse, 
+                    output_activation=None, name='garnet', quantize_transforms=quantize)(format_inputs(inputs))
+    if input_format == 'xne':
+        v = keras.layers.Concatenate()([v, inputs[-1]])
+    v = layer1(v)
+    v = layer2(v)
+    b = classification(v)
+    p = regression(v)
     outputs = [b, p]
 
     return keras.Model(inputs=inputs, outputs=outputs)
