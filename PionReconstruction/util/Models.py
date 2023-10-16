@@ -9,7 +9,7 @@ K = keras.backend
 from PionReconstruction.util.Layers import *
 
 def GarNetModel(aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), input_format='xne', vmax=128, simplified=True, collapse='mean', mean_by_nvert=True, quantize=False):
-    """ """
+    """ A functional keras model utilizing GarNet layers """
     layer1 = keras.layers.Dense(16, activation='relu', name='dense_1')
     layer2 = keras.layers.Dense(8, activation='relu', name='dense_2')
     classification = keras.layers.Dense(2, activation='sigmoid', name='classification')
@@ -47,7 +47,7 @@ def GarNetModel(aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8,
     return keras.Model(inputs=inputs, outputs=outputs)
 
 def keras_weights(model):
-    """ """
+    """ Returns the weights of every layer in the given keras model (used for profiling) """
     names = []
     weights = []
     for layer in model.layers:
@@ -66,7 +66,7 @@ def keras_weights(model):
     return names, weights
 
 def keras_activations(model, x):
-    """ """
+    """ Returns the activations of every layer in a given keras model on a given batch of data (used for profiling) """
     activations = []
     names = []
     for layer in model.layers:
@@ -88,6 +88,7 @@ def keras_activations(model, x):
     return names, activations
 
 def hls_weights(hls_model):
+    """ Returns the weights of every layer in a given hls model (used for profiling) """
     names = []
     weights = []
 
@@ -115,6 +116,7 @@ def hls_weights(hls_model):
     return names, weights
 
 def hls_activations(hls_model, x):
+    """ Returns the activations of every layer in a given hls model on a given batch of data (used for profiling) """
     names = []
     activations = []
     
@@ -129,7 +131,7 @@ def hls_activations(hls_model, x):
     return names, activations
 
 def weight_types(hls_model):
-    """ """
+    """ Returns the weight precisions of every layer in a given hls model (used for profiling) """
     precisions = {'layer': [], 'low': [], 'high': []}
     for layer in hls_model.get_layers():
         for weight in layer.get_weights():
@@ -154,7 +156,7 @@ def weight_types(hls_model):
     return precisions
 
 def activation_types(hls_model):
-    """ """
+    """ Returns the activation precisions of every layer in a given hls model (used for profiling) """
     precisions = {'layer': [], 'low': [], 'high': []}
     for layer in hls_model.get_layers():
         t = layer.get_output_variable().type
@@ -166,6 +168,13 @@ def activation_types(hls_model):
     return precisions
 
 class PrinterCallback(tf.keras.callbacks.Callback):
+    """
+    Custom printer callback for monitoring training progress
+    
+    See the developer guides for more information on custom callbacks:
+    <https://keras.io/guides/writing_your_own_callbacks/>
+    
+    """
 
     def on_epoch_begin(self, epoch, logs=None):
         self.start = time()
@@ -186,75 +195,3 @@ class PrinterCallback(tf.keras.callbacks.Callback):
         count = self.params["steps"]
         print(f"{prefix}[{'='*size}] {count}/{count}")
         print(f'{int(self.end - self.start):2d}s - loss: {logs["loss"]:.4f} - val loss: {logs["val_loss"]:.4f}')
-
-
-class GarNetClusteringModel(keras.Model):
-    """ """
-    def __init__(self, aggregators=([4, 4, 8]), filters=([8, 8, 16]), propagate=([8, 8, 16]), **kwargs):
-        """ """
-        super().__init__(**kwargs)
-        
-        self.aggregators = aggregators
-        self.filters = filters
-        self.propagate = propagate
-        
-        self.blocks = []
-        
-        block_params = zip(aggregators, filters, propagate)
-        
-        momentum = kwargs.get('momentum', 0.99)
-        self.input_gex = self.add_layer(GlobalExchange, name='input_gex')
-        self.input_batchnorm = self.add_layer(keras.layers.BatchNormalization, momentum=momentum, name='input_batchnorm')
-        self.input_dense = self.add_layer(keras.layers.Dense, 8, activation='tanh', name='input_dense')
-        
-        for i, (n_aggregators, n_filters, n_propagate) in enumerate(block_params):
-            garnet = self.add_layer(GarNet, normalizer, n_aggregators, n_filters, n_propagate, name='garnet_%d' % i)
-            batchnorm = self.add_layer(keras.layers.BatchNormalization, momentum=momentum, name='batchnorm_%d' % i)
-            
-            self.blocks.append((garnet, batchnorm))
-        
-        self.output_dense_0 = self.add_layer(keras.layers.Dense, 16, activation='relu', name='output_0')
-        self.output_dense_1 = self.add_layer(keras.layers.Dense, 8, activation='relu', name='output_1')
-        self.output_classification = self.add_layer(keras.layers.Dense, 2, activation='sigmoid', name='classification')
-        self.output_regression = self.add_layer(keras.layers.Dense, 1, name='regression')
-        
-    def call(self, inputs):
-        """ """
-        features = []
-        
-        x = inputs
-        x = self.input_gex(x)
-        x = self.input_batchnorm(x)
-        x = self.input_dense(x)
-        
-        for block in self.blocks:
-            for layer in block:
-                x = layer(x)
-            features.append(x)
-        
-        x = tf.concat(features, axis=-1)
-        
-        x = K.mean(x, axis=-2)
-        x = self.output_dense_0(x)
-        x = self.output_dense_1(x)
-        
-        b = self.output_classification(x)
-        p = self.output_regression(x)
-        
-        return K.concatenate([b, p], axis=-1)
-    
-    def add_layer(self, cls, *args, **kwargs):
-        """ """
-        layer = cls(*args, **kwargs)
-        self.layers.append(layer)
-        return layer
-    
-    def get_config(self):
-        config = {'aggregators':self.aggregators,
-                  'filters':self.filters,
-                  'propagate':self.propagate}
-        return config
-    
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)

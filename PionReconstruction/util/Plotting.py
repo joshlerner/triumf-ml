@@ -8,8 +8,29 @@ import scipy.stats as stats
 
 from PionReconstruction.util.Models import keras_weights, keras_activations, hls_weights, hls_activations, weight_types, activation_types
 
+plt.rcParams.update({'font.size': 14})
+
 class Plotter:
-    """ """
+    """ 
+    A helpful plotter for the common plots needed to compare and analyze ML models
+    
+    Input is a plotting function and the corresponding keywords
+    
+    Attributes
+    ----------
+    
+    fig : pyplot figure
+        The figure produced by the given function and keywords
+        
+    Methods
+    ----------
+    
+    show()
+        display the figure
+    save(outpath)
+        save the figure to the given directory
+    
+    """
     def __init__(self, function, **kwargs):
         """ """
         self.fig = function(**kwargs)
@@ -22,7 +43,7 @@ class Plotter:
         self.fig.savefig(outpath, **kwargs)
         
 def weight_profile(model=None, hls_model=None, x=None):
-    """ """
+    """ Produce a precision profile of the weights and activations in the HLS model """
     weight_precisions = weight_types(hls_model)
     activation_precisions = activation_types(hls_model)
     
@@ -91,12 +112,6 @@ def weight_profile(model=None, hls_model=None, x=None):
     activations.reverse()
     names.reverse()
     
-    #if 'classification' in names:
-        #cl_id = names.index('classification')
-    
-        #del names[cl_id]
-        #del activations[cl_id]
-    
     colors = cm.Blues(np.linspace(0, 1, len(names)))
     
     bplot = ax[1][0].boxplot(activations, vert=False, medianprops=dict(linestyle='-', color='k'),
@@ -151,7 +166,7 @@ def weight_profile(model=None, hls_model=None, x=None):
     return fig
 
 def training(history, metrics, validate=True, title=None, xlabel='epoch', ylabel=None, scale=None):
-    """ """
+    """ Visualize the training history by a given metric (accuracy, loss, etc) """
     labels = []
     fig = plt.figure()
     ax = fig.add_subplot()
@@ -173,12 +188,12 @@ def training(history, metrics, validate=True, title=None, xlabel='epoch', ylabel
     return fig
 
 def trainingOverlay(histories, labels, metric, title=None, xlabel='epoch', ylabel=None, scale=None):
-    """ """
+    """ Overlay multiple training histories to compare model convergence """
     fig = plt.figure()
     ax = fig.add_subplot()
     if title is None: title = metric
     if ylabel is None: ylabel = metric
-    colors = ['#733635ff', '#355373ff', '#357355ff']
+    colors = ['#733635ff', '#355373ff', '#357355ff'] # Theme colors
     for i, history in enumerate(histories):
         color = colors[int(i/2)]
         if i % 2 == 0:
@@ -194,6 +209,7 @@ def trainingOverlay(histories, labels, metric, title=None, xlabel='epoch', ylabe
     return fig
 
 def roc(preds, targets, labels, title='ROC', xlabel='Rejection Rate', ylabel='Identification Rate'):
+    """ Receiver operating characteristic curve for visualizing models' classification performances """
     fig = plt.figure()
     ax = fig.add_subplot()
     
@@ -215,7 +231,8 @@ def roc(preds, targets, labels, title='ROC', xlabel='Rejection Rate', ylabel='Id
     ax.legend(labels, loc='best')
     return fig
 
-def efficiency(preds, targets, labels, title='Classification Efficiency', xlabel='Efficiency', ylabel='Rejection Rate'):
+def efficiency(preds, targets, labels, title='Efficiency', xlabel='Efficiency', ylabel='Rejection Rate'):
+    """ Adaptation of the ROC for finer detail comparing models' classification performances """
     fig = plt.figure()
     ax = fig.add_subplot()
     
@@ -237,7 +254,8 @@ def efficiency(preds, targets, labels, title='Classification Efficiency', xlabel
 
 def regResponse(pred, target, stat=['median'], bins=None, title='Regression Response', 
                 xlabel='True Cluster Energy', ylabel='Predicted Energy / True Energy'):
-    fig = plt.figure()
+    """ Regression response curve for visualizing a model's regression performance """
+    fig = plt.figure(figsize=(8, 5))
     ax = fig.add_subplot()
 
     with np.errstate(divide='ignore'):
@@ -246,17 +264,16 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
 
     try: 
         assert len(bins) == 2
-        xbin = bns[0]
+        xbin = bins[0]
         ybin = bins[1]
     except:
-        xbin = [10**exp for exp in np.arange(-1.0, 3.1, 0.1)]
-        ybin = np.arange(0, 3.1, 0.1)
+        xbin = [10**exp for exp in np.arange(-0.8, 3.1, 0.1)]
+        ybin = np.arange(0.5, 2.1, 0.025)
 
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
     
-    color_map = LinearSegmentedColormap.from_list( 'garnet', ['#502625ff', '#733635ff', '#964645ff', '#b35c5bff', '#c37f7eff', '#ffffffff'] )
-
-    hh = ax.hist2d(x, y, bins=[xbin, ybin], cmap=color_map.reversed(), norm=LogNorm(), zorder=-1)
+    cmap = 'viridis'
+    hh = ax.hist2d(x, y, bins=[xbin, ybin], cmap=cmap, norm=LogNorm(), density=True, zorder=-1)
     ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black')
     for s in stat:
         if s == 'stdmean':
@@ -267,21 +284,23 @@ def regResponse(pred, target, stat=['median'], bins=None, title='Regression Resp
             ax.fill_between(xcenter, lower, upper, color='black', alpha=0.2)
         else:      
             ps = stats.binned_statistic(x, y, bins=xbin, statistic=s).statistic
-            ax.plot(xcenter, ps, color='#8cc9caff')
+            #color='#8cc9caff'
+            color='red'
+            ax.plot(xcenter, ps, color=color)
     ax.set_xscale('log')
-    ax.set_ylim(0, 3)
+    ax.set_ylim(0.5, 2)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
-    fig.colorbar(hh[3], ax=ax)
+    fig.colorbar(hh[3], ax=ax, label='Fraction of Clusters')
     return fig
 
 def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title='Regression Response Comparison',
                        xlabel='True Cluster Energy', ylabel='Predicted Energy / True Energy'):
-    """ """
+    """ Overlay of regression responses for comparing regression performance between models """
     fig = plt.figure()
     ax = fig.add_subplot()
-    colors = ['#733635ff', '#355373ff', '#357355ff']
+    colors = ['#733635ff', '#355373ff', '#357355ff'] # Theme colors
     
     x = {}
     y = {}
@@ -295,17 +314,22 @@ def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title
         xbin = bins[0]
         ybin = bins[1]
     except:
-        xbin = [10**exp for exp in np.arange(-1.0, 3.1, 0.1)]
+        xbin = [10**exp for exp in np.arange(-1.0, 3.1, 0.08)]
         
     xcenter = [(xbin[i] + xbin[i+1]) / 2 for i in range(len(xbin) - 1)]
     
     for s in stat:
-        for i, label in enumerate(labels):
-            color = colors[int(i/2)]
-            if i % 2 == 0:
-                linestyle = '-'
-            else:
+        iq = 0
+        ic = 0
+        for label in labels:
+            if 'quantized' in label.lower():
                 linestyle = '--'
+                color = colors[iq]
+                iq = iq + 1
+            else:
+                linestyle = '-'
+                color = colors[ic]
+                ic = ic + 1
             if s == 'stdmean':
                 upper = stats.binned_statistic(x[label], y[label], bins=xbin, statistic='mean').statistic + \
                 np.abs(stats.binned_statistic(x[label], y[label], bins=xbin, statistic='std').statistic)
@@ -319,7 +343,7 @@ def regResponseOverlay(preds, targets, labels, stat=['median'], bins=None, title
     ax.plot([0.1, 1000], [1, 1], linestyle='--', color='black', zorder=0)
 
     ax.set_xscale('log')
-    ax.set_ylim(0, 3)
+    ax.set_ylim(0.8, 2)
     ax.set_xlim(0.1, 1000)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
