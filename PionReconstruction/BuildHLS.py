@@ -2,7 +2,10 @@ from contextlib import contextmanager
 import sys, os
 import shutil
 
-gpu = input("GPU: ")
+gpu = input("GPU (n): ")
+v = input("Vertices (n): ")
+q = input("Quantized (q/c): ")
+reset = input("Reset (y/n): ")
     
 os.environ['CUDA_VISIBLE_DEVICES'] = f'{gpu}'
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
@@ -15,29 +18,31 @@ from PionReconstruction.util.Models import *
 from PionReconstruction.util.Generators import *
 from PionReconstruction.util.Plotting import *
 
+model_path = '/fast_scratch_1/jlerner/data/models/'
+out_path = '/fast_scratch_1/jlerner/GarNetHLS/'
 
-data_path = '/fast_scratch_1/atlas_images/v01-45/'
+if reset == 'y':
+    shutil.rmtree(out_path + f'{q}_{v}')
 
-cell_geo_path = data_path + 'cell_geo.root'
+if q == 'q':
+	model = tf.keras.models.load_model(model_path + f'qGarNet_log_{v}')
+elif q == 'c':
+	model = tf.keras.models.load_model(model_path + f'GarNet_log_{v}')
 
-out_path = '/fast_scratch_1/jlerner/data/'
-
-model = tf.keras.models.load_model(out_path + f'models/qGarNet_log_128')
-
-config = hls4ml.utils.config_from_keras_model(model, granularity='model')
-config['Model']['Precision'] = 'ap_fixed<20, 10>'
-config['LayerName'] = {'input_1': {'Precision': {'result': 'ap_fixed<16, 7, AP_RND, AP_SAT>'}},
-                       'input_2': {'Precision': {'result': 'ap_uint<16>'}}}
+config = {'Model': {'Precision': 'ap_fixed<22, 10>', 'ReuseFactor': 1, 'Strategy': 'Latency'},
+          'LayerName': {'data': {'Precision': {'result': 'ap_fixed<16, 6, AP_RND, AP_SAT>'}},
+                        'vertex': {'Precision': {'result': 'ap_uint<16>'}},
+                        'energy': {'Precision': {'result': 'ap_fixed<16, 6, AP_RND, AP_SAT>'}}},
+          'Optimizers': ['eliminate_linear_activation']}
 
 config['LayerType'] = {'InputLayer': {'ReuseFactor': 1, 'Trace': False},
-                       'GarNetStack': {'ReuseFactor': 1, 'Trace': True}, 
+                       'GarNetStack': {'ReuseFactor': 32, 'Trace': True}, 
                        'Dense': {'ReuseFactor': 1, 'Trace': True},
                        'Activation': {'ReuseFactor': 1, 'Trace': False}}
 
-hls_model = hls4ml.converters.convert_from_keras_model(model, hls_config=config, project_name='GarNetHLS',
-                                                       output_dir='/fast_scratch_1/jlerner/GarNetHLS/', 
+hls_model = hls4ml.converters.convert_from_keras_model(model, hls_config=config, project_name=f'{q}_{v}',
+                                                       output_dir=out_path + f'{q}_{v}',
                                                        part='xcu250-figd2104-2L-e')
-
 hls_model.compile()
 
-hls_model.build(csim=False, vsynth=True)
+hls_model.build(csim=False)
